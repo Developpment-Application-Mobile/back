@@ -1,72 +1,254 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
-import * as bcrypt from 'bcrypt';
+import { Model } from 'mongoose';
 import { Parent } from './schemas/parent.schema';
-import { Kid } from '../kid/schemas/kid.schema';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class ParentService {
-  constructor(
-    @InjectModel(Parent.name) private parentModel: Model<Parent>,
-    @InjectModel(Kid.name) private kidModel: Model<Kid>,
-  ) {}
+  constructor(@InjectModel(Parent.name) private parentModel: Model<Parent>) {}
 
-  async createParent(data: { name: string; email: string; password: string; phone?: string }) {
-  const exists = await this.parentModel.findOne({ email: data.email });
-  if (exists) throw new ConflictException('Email already registered');
+  // ─────────────────────────────
+  // 👨‍👩‍👧 PARENT METHODS
+  // ─────────────────────────────
 
-  const hashed = await bcrypt.hash(data.password, 10);
-  const created = new this.parentModel({ ...data, password: hashed });
-  return created.save();
-}
-
-
-  async findByEmail(email: string) {
-    return this.parentModel.findOne({ email }).select('+password').exec();
+  async createParent(data: any) {
+    const parent = new this.parentModel({
+      ...data,
+      children: [],
+      totalScore: 0,
+      isActive: true,
+    });
+    return parent.save();
   }
 
-  async findById(id: string) {
-    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('Invalid parent id');
-    return this.parentModel.findById(id).populate('kids').exec();
+  async getAllParents() {
+    return this.parentModel.find().exec();
   }
 
-  async addKid(
-    parentId: string,
-    kidData: { name: string; age: number; interests?: string[]; avatarUrl?: string },
-  ) {
+  async getParentById(id: string) {
+    const parent = await this.parentModel.findById(id);
+    if (!parent) throw new NotFoundException('Parent not found');
+    return parent;
+  }
+
+  async updateParent(id: string, updateData: any) {
+    const parent = await this.parentModel.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true },
+    );
+    if (!parent) throw new NotFoundException('Parent not found');
+    return parent;
+  }
+
+  async deleteParent(id: string) {
+    const deleted = await this.parentModel.findByIdAndDelete(id);
+    if (!deleted) throw new NotFoundException('Parent not found');
+    return deleted;
+  }
+
+  // ─────────────────────────────
+  // 👶 CHILD METHODS
+  // ─────────────────────────────
+
+  async addKid(parentId: string, kidData: any) {
     const parent = await this.parentModel.findById(parentId);
     if (!parent) throw new NotFoundException('Parent not found');
 
-    const kid = new this.kidModel({ ...kidData, parent: parent._id });
-    await kid.save();
+    parent.children.push({
+      ...kidData,
+      quizzes: [],
+      score: 0,
+    });
 
-    // ✅ Explicit cast to fix TS error
-    parent.kids.push(kid._id as unknown as Types.ObjectId);
+    return parent.save();
+  }
+
+  async updateKid(parentId: string, kidId: string, updateData: any) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    Object.assign(child, updateData);
+    await parent.save();
+    return child;
+  }
+
+  async deleteKid(parentId: string, kidId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const index = parent.children.findIndex((c: any) => c._id?.toString() === kidId);
+    if (index === -1) throw new NotFoundException('Child not found');
+
+    parent.children.splice(index, 1);
     await parent.save();
 
-    return kid;
+    return { message: 'Child deleted successfully' };
   }
 
-  async listKids(parentId: string) {
-    const parent = await this.parentModel.findById(parentId).populate('kids').exec();
+  // ✅ Generate QR code for child (using Mongo _id)
+  async generateChildQr(parentId: string, childId: string) {
+    const parent = await this.parentModel.findById(parentId);
     if (!parent) throw new NotFoundException('Parent not found');
-    return parent.kids;
+
+    const child = parent.children.find((c: any) => c._id?.toString() === childId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const childUrl = `http://localhost:3000/parents/child/${child._id}`;
+    const qrData = await QRCode.toDataURL(childUrl);
+
+    return { child: { name: child.name, id: child._id }, qr: qrData };
   }
 
-  async update(id: string, updateData: any) {
-  // If password is being updated, hash it again
-  if (updateData.password) {
-    const salt = await bcrypt.genSalt();
-    updateData.password = await bcrypt.hash(updateData.password, salt);
+  // ✅ Get child by MongoDB _id (when QR is scanned)
+  async getChildById(childId: string) {
+    const parent = await this.parentModel.findOne({ 'children._id': childId });
+    if (!parent) throw new NotFoundException('Parent not found for this child');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === childId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    return child;
   }
 
-  return this.parentModel.findByIdAndUpdate(id, updateData, {
-    new: true, // return the updated doc
-  });
+  // ─────────────────────────────
+  // 🧩 QUIZ METHODS
+  // ─────────────────────────────
+
+  async addQuiz(parentId: string, kidId: string, quizData: any) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    child.quizzes.push({ ...quizData, questions: [] });
+    await parent.save();
+    return child.quizzes[child.quizzes.length - 1];
+  }
+
+  async getAllQuizzes(parentId: string, kidId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+    return child.quizzes;
+  }
+
+  async getQuizById(parentId: string, kidId: string, quizId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const quiz = child.quizzes.find((q: any) => q._id?.toString() === quizId);
+    if (!quiz) throw new NotFoundException('Quiz not found');
+    return quiz;
+  }
+
+  async updateQuiz(parentId: string, kidId: string, quizId: string, updateData: any) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const quiz = child.quizzes.find((q: any) => q._id?.toString() === quizId);
+    if (!quiz) throw new NotFoundException('Quiz not found');
+
+    Object.assign(quiz, updateData);
+    await parent.save();
+    return quiz;
+  }
+
+  async deleteQuiz(parentId: string, kidId: string, quizId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const index = child.quizzes.findIndex((q: any) => q._id?.toString() === quizId);
+    if (index === -1) throw new NotFoundException('Quiz not found');
+
+    child.quizzes.splice(index, 1);
+    await parent.save();
+    return { message: 'Quiz deleted successfully' };
+  }
+
+  // ─────────────────────────────
+  // ❓ QUESTION METHODS
+  // ─────────────────────────────
+
+  async addQuestion(parentId: string, kidId: string, quizId: string, questionData: any) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const quiz = child.quizzes.find((q: any) => q._id?.toString() === quizId);
+    if (!quiz) throw new NotFoundException('Quiz not found');
+
+    quiz.questions.push(questionData.question ?? questionData);
+    await parent.save();
+    return quiz.questions[quiz.questions.length - 1];
+  }
+
+  async updateQuestion(
+  parentId: string,
+  kidId: string,
+  quizId: string,
+  questionId: string,
+  updateData: any,
+) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  const quiz = child.quizzes.find((q: any) => q._id?.toString() === quizId);
+  if (!quiz) throw new NotFoundException('Quiz not found');
+
+  const question = quiz.questions.find((q: any) => q._id?.toString() === questionId);
+  if (!question) throw new NotFoundException('Question not found');
+
+  Object.assign(question, updateData);
+  parent.markModified('children');
+  await parent.save();
+
+  return question;
 }
 
-  async remove(id: string) {
-  return this.parentModel.findByIdAndDelete(id);
+
+
+
+  async deleteQuestion(parentId: string, kidId: string, quizId: string, questionId: string) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  const quiz = child.quizzes.find((q: any) => q._id?.toString() === quizId);
+  if (!quiz) throw new NotFoundException('Quiz not found');
+
+  const questionIndex = quiz.questions.findIndex((q: any) => q._id?.toString() === questionId);
+  if (questionIndex === -1) throw new NotFoundException('Question not found');
+
+  quiz.questions.splice(questionIndex, 1);
+  await parent.save();
+
+  return { message: 'Question deleted successfully' };
 }
+
+
+  // ─────────────────────────────
+  // 🔍 FIND BY EMAIL
+  // ─────────────────────────────
+  async findByEmail(email: string) {
+    return this.parentModel.findOne({ email }).exec();
+  }
 }

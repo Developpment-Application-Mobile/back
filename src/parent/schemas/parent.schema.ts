@@ -1,12 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
+import { Child, ChildSchema } from './subschemas/child.schema';
 
 export type ParentDocument = HydratedDocument<Parent>;
 
 @Schema({ timestamps: true })
 export class Parent {
-  _id: Types.ObjectId; // ✅ Explicitly type _id so TS knows it’s an ObjectId
-
   @Prop({ required: true })
   name: string;
 
@@ -16,16 +15,20 @@ export class Parent {
   @Prop({ required: true })
   password: string;
 
-  // Relation: A parent can have multiple kids
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Kid' }], default: [] })
-  kids: Types.ObjectId[];
-
-  // Optional: parent profile fields
   @Prop()
-  phone?: string;
+  phoneNumber?: string;
 
   @Prop()
-  avatarUrl?: string;
+  profileImageUrl?: string;
+
+  @Prop({ type: [ChildSchema], default: [] })
+  children: Child[];
+
+  @Prop({ default: 0 })
+  totalScore: number;
+
+  @Prop({ default: true })
+  isActive: boolean;
 }
 
 export const ParentSchema = SchemaFactory.createForClass(Parent);

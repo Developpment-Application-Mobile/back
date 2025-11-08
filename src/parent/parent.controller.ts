@@ -1,102 +1,145 @@
-import { Body, Controller, Get, Param, Post, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  BadRequestException,
+} from '@nestjs/common';
 import { ParentService } from './parent.service';
-import { Types } from 'mongoose';
-import * as bcrypt from 'bcrypt';
-import { Delete } from '@nestjs/common/decorators/http/request-mapping.decorator';
-import { Patch } from '@nestjs/common/decorators/http/request-mapping.decorator';
-
-// Simple DTOs (you can move them to separate files)
-class CreateParentDto {
-  name: string;
-  email: string;
-  password: string;
-  phone?: string;
-}
-
-class LoginDto {
-  email: string;
-  password: string;
-}
-
-class CreateKidDto {
-  name: string;
-  age: number;
-  interests?: string[];
-  avatarUrl?: string;
-}
 
 @Controller('parents')
 export class ParentController {
   constructor(private readonly parentService: ParentService) {}
 
-  @Post('register')
-  async register(@Body() body: CreateParentDto) {
-    if (!body.name || !body.email || !body.password)
-      throw new BadRequestException('Missing fields');
+  // ─────────────────────────────
+  // 👨‍👩‍👧 PARENT ROUTES
+  // ─────────────────────────────
 
-    const parent = await this.parentService.createParent(body);
-    // ✅ safely remove password
-    const { password, ...p } = parent.toObject();
-    return p;
+  @Post()
+  async createParent(@Body() body: any) {
+    if (!body.name || !body.email || !body.password) {
+      throw new BadRequestException('name, email and password are required');
+    }
+    return this.parentService.createParent(body);
   }
 
-  @Post('login')
-  async login(@Body() body: LoginDto) {
-    const parent = await this.parentService.findByEmail(body.email);
-    if (!parent) throw new BadRequestException('Invalid credentials');
-
-    const match = await bcrypt.compare(body.password, (parent as any).password);
-    if (!match) throw new BadRequestException('Invalid credentials');
-
-    // ✅ safely remove password
-    const { password, ...p } = parent.toObject();
-    // NOTE: real app should return JWT; here we return parent object for simplicity
-    return p;
+  @Get()
+  async getAllParents() {
+    return this.parentService.getAllParents();
   }
+
+  @Get(':id')
+  async getParent(@Param('id') id: string) {
+    return this.parentService.getParentById(id);
+  }
+
+  @Patch(':id')
+  async updateParent(@Param('id') id: string, @Body() body: any) {
+    return this.parentService.updateParent(id, body);
+  }
+
+  @Delete(':id')
+  async deleteParent(@Param('id') id: string) {
+    return this.parentService.deleteParent(id);
+  }
+
+  // ─────────────────────────────
+  // 👶 CHILD ROUTES
+  // ─────────────────────────────
 
   @Post(':parentId/kids')
-  async addKid(@Param('parentId') parentId: string, @Body() body: CreateKidDto) {
-    if (!Types.ObjectId.isValid(parentId))
-      throw new BadRequestException('Invalid parent id');
-    const kid = await this.parentService.addKid(parentId, body as any);
-    return kid;
+  async addKid(@Param('parentId') parentId: string, @Body() body: any) {
+    if (!body.name || !body.age || !body.level) {
+      throw new BadRequestException('name, age and level are required');
+    }
+    return this.parentService.addKid(parentId, body);
   }
 
-  @Get(':parentId/kids')
-  async getKids(@Param('parentId') parentId: string) {
-    if (!Types.ObjectId.isValid(parentId))
-      throw new BadRequestException('Invalid parent id');
-    return this.parentService.listKids(parentId);
+  @Patch(':parentId/kids/:kidId')
+  async updateKid(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Body() body: any) {
+    return this.parentService.updateKid(parentId, kidId, body);
   }
 
-  @Get(':parentId')
-  async getParent(@Param('parentId') parentId: string) {
-    if (!Types.ObjectId.isValid(parentId))
-      throw new BadRequestException('Invalid parent id');
-    return this.parentService.findById(parentId);
+  @Delete(':parentId/kids/:kidId')
+  async deleteKid(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+    return this.parentService.deleteKid(parentId, kidId);
   }
 
-  @Patch(':parentId')
-async updateParent(
+  // ✅ Generate child's QR code (uses Mongo _id)
+  @Get(':parentId/kids/:kidId/qr')
+  async generateChildQr(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+    return this.parentService.generateChildQr(parentId, kidId);
+  }
+
+  // ✅ Child scans QR → load their info using Mongo _id
+  @Get('child/:childId')
+  async getChildById(@Param('childId') childId: string) {
+    return this.parentService.getChildById(childId);
+  }
+
+  // ─────────────────────────────
+  // 🧩 QUIZ ROUTES
+  // ─────────────────────────────
+
+  @Post(':parentId/kids/:kidId/quizzes')
+  async addQuiz(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Body() quizData: any) {
+    return this.parentService.addQuiz(parentId, kidId, quizData);
+  }
+
+  @Get(':parentId/kids/:kidId/quizzes')
+  async getAllQuizzes(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+    return this.parentService.getAllQuizzes(parentId, kidId);
+  }
+
+  @Get(':parentId/kids/:kidId/quizzes/:quizId')
+  async getQuizById(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string) {
+    return this.parentService.getQuizById(parentId, kidId, quizId);
+  }
+
+  @Patch(':parentId/kids/:kidId/quizzes/:quizId')
+  async updateQuiz(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string, @Body() body: any) {
+    return this.parentService.updateQuiz(parentId, kidId, quizId, body);
+  }
+
+  @Delete(':parentId/kids/:kidId/quizzes/:quizId')
+  async deleteQuiz(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string) {
+    return this.parentService.deleteQuiz(parentId, kidId, quizId);
+  }
+
+  // ─────────────────────────────
+  // ❓ QUESTION ROUTES
+  // ─────────────────────────────
+
+  @Post(':parentId/kids/:kidId/quizzes/:quizId/questions')
+  async addQuestion(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string, @Body() body: any) {
+    console.log('Incoming question:', body);
+    return this.parentService.addQuestion(parentId, kidId, quizId, body);
+  }
+
+  @Patch(':parentId/kids/:kidId/quizzes/:quizId/questions/:questionId')
+async updateQuestion(
   @Param('parentId') parentId: string,
-  @Body() body: Partial<{ name: string; email: string; password: string; phone?: string }>
+  @Param('kidId') kidId: string,
+  @Param('quizId') quizId: string,
+  @Param('questionId') questionId: string,
+  @Body() updateData: any,
 ) {
-  if (!Types.ObjectId.isValid(parentId))
-    throw new BadRequestException('Invalid parent id');
-
-  const updated = await this.parentService.update(parentId, body);
-  if (!updated) throw new BadRequestException('Parent not found');
-  return { message: 'Parent updated successfully', updated };
+  console.log('Updating question with ID:', questionId);
+  return this.parentService.updateQuestion(parentId, kidId, quizId, questionId, updateData);
 }
 
 
-  @Delete(':parentId')
-async deleteParent(@Param('parentId') parentId: string) {
-  if (!Types.ObjectId.isValid(parentId))
-    throw new BadRequestException('Invalid parent id');
-
-  const deleted = await this.parentService.remove(parentId);
-  if (!deleted) throw new BadRequestException('Parent not found');
-  return { message: 'Parent deleted successfully' };
+  @Delete(':parentId/kids/:kidId/quizzes/:quizId/questions/:questionId')
+async deleteQuestion(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('quizId') quizId: string,
+  @Param('questionId') questionId: string,
+) {
+  return this.parentService.deleteQuestion(parentId, kidId, quizId, questionId);
 }
+
 }
