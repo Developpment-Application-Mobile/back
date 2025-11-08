@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { ParentService } from '../parent/parent.service';
@@ -10,6 +10,27 @@ export class AuthService {
     private readonly parentService: ParentService,
     private readonly jwtService: JwtService,
   ) {}
+
+  async signup({ name, email, password }: { name: string; email: string; password: string }) {
+    // Check if email already exists
+    const existing = await this.parentService.findByEmail(email);
+    if (existing) {
+      throw new ConflictException('Email already registered');
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create new parent
+    const parent = await this.parentService.createParent({
+      name,
+      email,
+      password: hashedPassword,
+    });
+
+    // Auto-login (generate token)
+    return this.login(parent);
+  }
 
   async validateParent(email: string, password: string): Promise<ParentDocument> {
     const parent = await this.parentService.findByEmail(email);
@@ -33,9 +54,7 @@ export class AuthService {
     };
     const token = await this.jwtService.signAsync(payload);
 
-    // ✅ Safely remove the password using destructuring
     const { password, ...safeParent } = parent.toObject();
-
     return {
       access_token: token,
       parent: safeParent,
