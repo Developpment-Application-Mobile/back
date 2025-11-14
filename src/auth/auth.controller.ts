@@ -19,7 +19,11 @@ export class AuthController {
   @Post('signup')
   @ApiOperation({ summary: 'Register a new parent account' })
   @ApiBody({ type: SignupDto })
-  @ApiResponse({ status: 201, description: 'Parent successfully registered and logged in', type: AuthResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Parent successfully registered and logged in',
+    type: AuthResponseDto,
+  })
   @ApiBadRequestResponse({ description: 'Bad request - invalid input data' })
   @ApiConflictResponse({ description: 'Conflict - email already registered' })
   async signup(@Body() body: SignupDto) {
@@ -29,11 +33,20 @@ export class AuthController {
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiBody({ type: LoginDto })
-  @ApiResponse({ status: 200, description: 'Login successful', type: AuthResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - invalid credentials' })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful',
+    type: AuthResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - invalid credentials',
+  })
   @ApiBadRequestResponse({ description: 'Bad request - invalid input data' })
   async login(@Body() body: LoginDto) {
-    const parent = await this.authService.validateParent(body.email, body.password);
+    const parent = await this.authService.validateParent(
+      body.email,
+      body.password,
+    );
     return this.authService.login(parent);
   }
 }

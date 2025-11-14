@@ -10,11 +10,17 @@ export class CreateChildDto {
   @IsInt()
   age: number;
 
-  @ApiProperty({ example: 'beginner', description: 'Child level (e.g., beginner, intermediate, advanced)' })
+  @ApiProperty({
+    example: 'beginner',
+    description: 'Child level (e.g., beginner, intermediate, advanced)',
+  })
   @IsString()
   level: string;
 
-  @ApiPropertyOptional({ example: '👧', description: 'Avatar emoji for the child' })
+  @ApiPropertyOptional({
+    example: '👧',
+    description: 'Avatar emoji for the child',
+  })
   @IsOptional()
   @IsString()
   avatarEmoji?: string;
@@ -36,7 +42,10 @@ export class UpdateChildDto {
   @IsString()
   level?: string;
 
-  @ApiPropertyOptional({ example: '👧', description: 'Avatar emoji for the child' })
+  @ApiPropertyOptional({
+    example: '👧',
+    description: 'Avatar emoji for the child',
+  })
   @IsOptional()
   @IsString()
   avatarEmoji?: string;

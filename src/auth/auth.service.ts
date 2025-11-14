@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { ParentService } from '../parent/parent.service';
@@ -11,7 +15,15 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async signup({ name, email, password }: { name: string; email: string; password: string }) {
+  async signup({
+    name,
+    email,
+    password,
+  }: {
+    name: string;
+    email: string;
+    password: string;
+  }) {
     // Check if email already exists
     const existing = await this.parentService.findByEmail(email);
     if (existing) {
@@ -32,7 +44,10 @@ export class AuthService {
     return this.login(parent);
   }
 
-  async validateParent(email: string, password: string): Promise<ParentDocument> {
+  async validateParent(
+    email: string,
+    password: string,
+  ): Promise<ParentDocument> {
     const parent = await this.parentService.findByEmail(email);
     if (!parent) {
       throw new UnauthorizedException('Invalid credentials');
