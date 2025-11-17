@@ -26,4 +26,13 @@ export class AuthController {
     const parent = await this.authService.validateParent(body.email, body.password);
     return this.authService.login(parent);
   }
+
+  @Post('forgot-password')
+  forgot(@Body('email') email: string) {
+  return this.authService.forgotPassword(email);
 }
+
+@Post('reset-password')
+reset(@Body() body: { token: string; newPassword: string }) {
+  return this.authService.resetPassword(body.token, body.newPassword);
+}}

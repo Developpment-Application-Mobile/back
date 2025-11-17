@@ -29,6 +29,13 @@ export class Parent {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  // ==== FORGOT PASSWORD ====
+  @Prop()
+  resetPasswordToken?: string;
+
+  @Prop()
+  resetPasswordExpires?: Date;
 }
 
 export const ParentSchema = SchemaFactory.createForClass(Parent);

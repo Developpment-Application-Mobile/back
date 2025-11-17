@@ -22,11 +22,14 @@ import { CreateParentDto, UpdateParentDto } from './dto/parent.dto';
 import { CreateChildDto, UpdateChildDto } from './dto/child.dto';
 import { QuizDto, UpdateQuizDto } from './dto/quiz.dto';
 import { QuestionDto, UpdateQuestionDto } from './dto/question.dto';
+import { AuthService } from 'src/auth/auth.service';
 
 @ApiTags('parents')
 @Controller('parents')
 export class ParentController {
-  constructor(private readonly parentService: ParentService) {}
+  constructor(private readonly parentService: ParentService,
+    private readonly authService: AuthService,
+  ) {}
 
   // ─────────────────────────────
   // 👨‍👩‍👧 PARENT ROUTES
@@ -251,5 +254,6 @@ export class ParentController {
   ) {
     return this.parentService.deleteQuestion(parentId, kidId, quizId, questionId);
   }
+
 
 }

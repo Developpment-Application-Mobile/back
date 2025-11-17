@@ -98,7 +98,7 @@ export class ParentService {
     const child = parent.children.find((c: any) => c._id?.toString() === childId);
     if (!child) throw new NotFoundException('Child not found');
 
-    const childUrl = `http://localhost:3000/parents/child/${child._id}`;
+    const childUrl = `${child._id}`;
     const qrData = await QRCode.toDataURL(childUrl);
 
     return { child: { name: child.name, id: child._id }, qr: qrData };
@@ -106,14 +106,18 @@ export class ParentService {
 
   // ✅ Get child by MongoDB _id (when QR is scanned)
   async getChildById(childId: string) {
-    const parent = await this.parentModel.findOne({ 'children._id': childId });
-    if (!parent) throw new NotFoundException('Parent not found for this child');
+  // If childId is a full URL, extract only the ObjectId part
+  const cleanId = childId.split('/').pop();
 
-    const child = parent.children.find((c: any) => c._id?.toString() === childId);
-    if (!child) throw new NotFoundException('Child not found');
+  const parent = await this.parentModel.findOne({ 'children._id': cleanId });
+  if (!parent) throw new NotFoundException('Parent not found for this child');
 
-    return child;
-  }
+  const child = parent.children.find((c: any) => c._id?.toString() === cleanId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  return child;
+}
+
 
   // ─────────────────────────────
   // 🧩 QUIZ METHODS
