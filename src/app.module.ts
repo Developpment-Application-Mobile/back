@@ -12,9 +12,12 @@ import { MailModule } from './mail/mail.module';
       isGlobal: true,
     }),
 
-    MongooseModule.forRoot(process.env.MONGO_URI ?? 'mongodb://localhost/kidquiz', {
-      dbName: 'edukid',
-    }),
+    MongooseModule.forRoot(
+      process.env.MONGO_URI ?? 'mongodb://localhost/kidquiz',
+      {
+        dbName: 'edukid',
+      },
+    ),
 
     ParentModule,
     AuthModule,

@@ -1,6 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { QuestionDto } from './question.dto';
 
 export class QuizDto {
@@ -39,7 +45,10 @@ export class UpdateQuizDto {
   @IsString()
   type?: string;
 
-  @ApiPropertyOptional({ example: 5, description: 'Number of questions answered' })
+  @ApiPropertyOptional({
+    example: 5,
+    description: 'Number of questions answered',
+  })
   @IsOptional()
   @IsInt()
   answered?: number;
@@ -48,4 +57,26 @@ export class UpdateQuizDto {
   @IsOptional()
   @IsInt()
   score?: number;
+}
+
+export class GenerateQuizDto {
+  @ApiProperty({ example: 'math', description: 'Subject of the quiz' })
+  @IsString()
+  subject: string;
+
+  @ApiProperty({ example: 'beginner', description: 'Difficulty level' })
+  @IsString()
+  difficulty: string;
+
+  @ApiProperty({ example: 10, description: 'Number of questions to generate' })
+  @IsInt()
+  nbrQuestions: number;
+
+  @ApiPropertyOptional({
+    example: 'fractions',
+    description: 'Optional topic within the subject',
+  })
+  @IsOptional()
+  @IsString()
+  topic?: string;
 }

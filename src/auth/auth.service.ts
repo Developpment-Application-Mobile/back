@@ -22,7 +22,16 @@ export class AuthService {
     private readonly mailService: MailService,
   ) {}
 
-  async signup({ name, email, password }: { name: string; email: string; password: string }) {
+  async signup({
+    name,
+    email,
+    password,
+  }: {
+    name: string;
+    email: string;
+    password: string;
+  }) {
+    // Check if email already exists
     const existing = await this.parentService.findByEmail(email);
     if (existing) throw new ConflictException('Email already registered');
 
@@ -37,7 +46,10 @@ export class AuthService {
     return this.login(parent);
   }
 
-  async validateParent(email: string, password: string): Promise<ParentDocument> {
+  async validateParent(
+    email: string,
+    password: string,
+  ): Promise<ParentDocument> {
     const parent = await this.parentService.findByEmail(email);
     if (!parent) throw new UnauthorizedException('Invalid credentials');
 

@@ -20,7 +20,7 @@ import {
 import { ParentService } from './parent.service';
 import { CreateParentDto, UpdateParentDto } from './dto/parent.dto';
 import { CreateChildDto, UpdateChildDto } from './dto/child.dto';
-import { QuizDto, UpdateQuizDto } from './dto/quiz.dto';
+import { QuizDto, UpdateQuizDto, GenerateQuizDto } from './dto/quiz.dto';
 import { QuestionDto, UpdateQuestionDto } from './dto/question.dto';
 import { AuthService } from 'src/auth/auth.service';
 
@@ -39,7 +39,9 @@ export class ParentController {
   @ApiOperation({ summary: 'Create a new parent' })
   @ApiBody({ type: CreateParentDto })
   @ApiResponse({ status: 201, description: 'Parent successfully created' })
-  @ApiBadRequestResponse({ description: 'Bad request - name, email and password are required' })
+  @ApiBadRequestResponse({
+    description: 'Bad request - name, email and password are required',
+  })
   async createParent(@Body() body: CreateParentDto) {
     if (!body.name || !body.email || !body.password) {
       throw new BadRequestException('name, email and password are required');
@@ -91,9 +93,14 @@ export class ParentController {
   @ApiParam({ name: 'parentId', description: 'Parent ID' })
   @ApiBody({ type: CreateChildDto })
   @ApiResponse({ status: 201, description: 'Child successfully added' })
-  @ApiBadRequestResponse({ description: 'Bad request - name, age and level are required' })
+  @ApiBadRequestResponse({
+    description: 'Bad request - name, age and level are required',
+  })
   @ApiNotFoundResponse({ description: 'Parent not found' })
-  async addKid(@Param('parentId') parentId: string, @Body() body: CreateChildDto) {
+  async addKid(
+    @Param('parentId') parentId: string,
+    @Body() body: CreateChildDto,
+  ) {
     if (!body.name || !body.age || !body.level) {
       throw new BadRequestException('name, age and level are required');
     }
@@ -107,7 +114,11 @@ export class ParentController {
   @ApiBody({ type: UpdateChildDto })
   @ApiResponse({ status: 200, description: 'Child successfully updated' })
   @ApiNotFoundResponse({ description: 'Parent or child not found' })
-  async updateKid(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Body() body: UpdateChildDto) {
+  async updateKid(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Body() body: UpdateChildDto,
+  ) {
     return this.parentService.updateKid(parentId, kidId, body);
   }
 
@@ -117,7 +128,10 @@ export class ParentController {
   @ApiParam({ name: 'kidId', description: 'Child ID' })
   @ApiResponse({ status: 200, description: 'Child successfully deleted' })
   @ApiNotFoundResponse({ description: 'Parent or child not found' })
-  async deleteKid(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+  async deleteKid(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+  ) {
     return this.parentService.deleteKid(parentId, kidId);
   }
 
@@ -126,9 +140,16 @@ export class ParentController {
   @ApiOperation({ summary: 'Generate QR code for a child' })
   @ApiParam({ name: 'parentId', description: 'Parent ID' })
   @ApiParam({ name: 'kidId', description: 'Child ID' })
-  @ApiResponse({ status: 200, description: 'QR code generated successfully', schema: { type: 'object', properties: { qrCode: { type: 'string' } } } })
+  @ApiResponse({
+    status: 200,
+    description: 'QR code generated successfully',
+    schema: { type: 'object', properties: { qrCode: { type: 'string' } } },
+  })
   @ApiNotFoundResponse({ description: 'Parent or child not found' })
-  async generateChildQr(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+  async generateChildQr(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+  ) {
     return this.parentService.generateChildQr(parentId, kidId);
   }
 
@@ -147,14 +168,21 @@ export class ParentController {
   // ─────────────────────────────
 
   @Post(':parentId/kids/:kidId/quizzes')
-  @ApiOperation({ summary: 'Add a quiz to a child' })
+  @ApiOperation({ summary: 'Generate and add a quiz to a child' })
   @ApiParam({ name: 'parentId', description: 'Parent ID' })
   @ApiParam({ name: 'kidId', description: 'Child ID' })
-  @ApiBody({ type: QuizDto })
-  @ApiResponse({ status: 201, description: 'Quiz successfully added' })
+  @ApiBody({ type: GenerateQuizDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Quiz successfully generated and added',
+  })
   @ApiNotFoundResponse({ description: 'Parent or child not found' })
-  async addQuiz(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Body() quizData: QuizDto) {
-    return this.parentService.addQuiz(parentId, kidId, quizData);
+  async addQuiz(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Body() quizRequest: GenerateQuizDto,
+  ) {
+    return this.parentService.addQuiz(parentId, kidId, quizRequest);
   }
 
   @Get(':parentId/kids/:kidId/quizzes')
@@ -163,7 +191,10 @@ export class ParentController {
   @ApiParam({ name: 'kidId', description: 'Child ID' })
   @ApiResponse({ status: 200, description: 'List of quizzes' })
   @ApiNotFoundResponse({ description: 'Parent or child not found' })
-  async getAllQuizzes(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+  async getAllQuizzes(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+  ) {
     return this.parentService.getAllQuizzes(parentId, kidId);
   }
 
@@ -174,7 +205,11 @@ export class ParentController {
   @ApiParam({ name: 'quizId', description: 'Quiz ID' })
   @ApiResponse({ status: 200, description: 'Quiz found' })
   @ApiNotFoundResponse({ description: 'Parent, child, or quiz not found' })
-  async getQuizById(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string) {
+  async getQuizById(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('quizId') quizId: string,
+  ) {
     return this.parentService.getQuizById(parentId, kidId, quizId);
   }
 
@@ -186,7 +221,12 @@ export class ParentController {
   @ApiBody({ type: UpdateQuizDto })
   @ApiResponse({ status: 200, description: 'Quiz successfully updated' })
   @ApiNotFoundResponse({ description: 'Parent, child, or quiz not found' })
-  async updateQuiz(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string, @Body() body: UpdateQuizDto) {
+  async updateQuiz(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('quizId') quizId: string,
+    @Body() body: UpdateQuizDto,
+  ) {
     return this.parentService.updateQuiz(parentId, kidId, quizId, body);
   }
 
@@ -197,7 +237,11 @@ export class ParentController {
   @ApiParam({ name: 'quizId', description: 'Quiz ID' })
   @ApiResponse({ status: 200, description: 'Quiz successfully deleted' })
   @ApiNotFoundResponse({ description: 'Parent, child, or quiz not found' })
-  async deleteQuiz(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string) {
+  async deleteQuiz(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('quizId') quizId: string,
+  ) {
     return this.parentService.deleteQuiz(parentId, kidId, quizId);
   }
 
@@ -213,7 +257,12 @@ export class ParentController {
   @ApiBody({ type: QuestionDto })
   @ApiResponse({ status: 201, description: 'Question successfully added' })
   @ApiNotFoundResponse({ description: 'Parent, child, or quiz not found' })
-  async addQuestion(@Param('parentId') parentId: string, @Param('kidId') kidId: string, @Param('quizId') quizId: string, @Body() body: QuestionDto) {
+  async addQuestion(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('quizId') quizId: string,
+    @Body() body: QuestionDto,
+  ) {
     console.log('Incoming question:', body);
     return this.parentService.addQuestion(parentId, kidId, quizId, body);
   }
@@ -226,7 +275,9 @@ export class ParentController {
   @ApiParam({ name: 'questionId', description: 'Question ID' })
   @ApiBody({ type: UpdateQuestionDto })
   @ApiResponse({ status: 200, description: 'Question successfully updated' })
-  @ApiNotFoundResponse({ description: 'Parent, child, quiz, or question not found' })
+  @ApiNotFoundResponse({
+    description: 'Parent, child, quiz, or question not found',
+  })
   async updateQuestion(
     @Param('parentId') parentId: string,
     @Param('kidId') kidId: string,
@@ -235,7 +286,13 @@ export class ParentController {
     @Body() updateData: UpdateQuestionDto,
   ) {
     console.log('Updating question with ID:', questionId);
-    return this.parentService.updateQuestion(parentId, kidId, quizId, questionId, updateData);
+    return this.parentService.updateQuestion(
+      parentId,
+      kidId,
+      quizId,
+      questionId,
+      updateData,
+    );
   }
 
   @Delete(':parentId/kids/:kidId/quizzes/:quizId/questions/:questionId')
@@ -245,14 +302,21 @@ export class ParentController {
   @ApiParam({ name: 'quizId', description: 'Quiz ID' })
   @ApiParam({ name: 'questionId', description: 'Question ID' })
   @ApiResponse({ status: 200, description: 'Question successfully deleted' })
-  @ApiNotFoundResponse({ description: 'Parent, child, quiz, or question not found' })
+  @ApiNotFoundResponse({
+    description: 'Parent, child, quiz, or question not found',
+  })
   async deleteQuestion(
     @Param('parentId') parentId: string,
     @Param('kidId') kidId: string,
     @Param('quizId') quizId: string,
     @Param('questionId') questionId: string,
   ) {
-    return this.parentService.deleteQuestion(parentId, kidId, quizId, questionId);
+    return this.parentService.deleteQuestion(
+      parentId,
+      kidId,
+      quizId,
+      questionId,
+    );
   }
 
 
