@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Parent } from './schemas/parent.schema';
@@ -145,24 +145,48 @@ export class ParentService {
 
   // ✅ Get child by MongoDB _id (when QR is scanned)
   async getChildById(childId: string) {
-  // If childId is a full URL, extract only the ObjectId part
-  const cleanId = childId.split('/').pop();
-
-  const parent = await this.parentModel.findOne({ 'children._id': cleanId });
-  if (!parent) throw new NotFoundException('Parent not found for this child');
+    const parent = await this.parentModel.findOne({ 'children._id': childId });
+    if (!parent) throw new NotFoundException('Parent not found for this child');
 
     const child = parent.children.find(
       (c: any) => c._id?.toString() === childId,
     );
     if (!child) throw new NotFoundException('Child not found');
 
-  return child;
-}
-
+    return child;
+  }
 
   // ─────────────────────────────
   // 🧩 QUIZ METHODS
   // ─────────────────────────────
+
+  private async generateContentWithRetry(
+    model: any,
+    prompt: string,
+    maxRetries = 3,
+  ) {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      try {
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        return text;
+      } catch (error: any) {
+        const status = error?.status ?? error?.statusCode;
+        if (status !== 503) {
+          throw error;
+        }
+        const wait = (2 ** attempt) * 500;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        attempt++;
+        if (attempt > maxRetries) {
+          throw new ServiceUnavailableException(
+            'Gemini API is overloaded. Retry shortly.',
+          );
+        }
+      }
+    }
+  }
 
   async addQuiz(parentId: string, kidId: string, quizData: any) {
     const parent = await this.parentModel.findById(parentId);
@@ -194,8 +218,7 @@ export class ParentService {
       `{"title":"string","type":"string","answered":0,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}` +
       `\nRequirements:\n- subject: ${subject}\n- difficulty: ${difficulty}\n- number_of_questions: ${nbrQuestions}\n- topic: ${topic || 'none'}\n- Ensure strict JSON output, no markdown, no extra text.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const text = await this.generateContentWithRetry(model, prompt, 3);
     console.log('Gemini API response:', text);
     let parsedText = text?.trim() ?? '';
     if (parsedText.startsWith('```')) {
