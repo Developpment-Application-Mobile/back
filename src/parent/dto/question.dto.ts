@@ -21,6 +21,14 @@ export class QuestionDto {
   correctAnswerIndex: number;
 
   @ApiPropertyOptional({
+    example: 1,
+    description: 'Index of the user\'s selected answer',
+  })
+  @IsOptional()
+  @IsInt()
+  userAnswerIndex?: number;
+
+  @ApiPropertyOptional({
     example: '2 + 2 equals 4',
     description: 'Explanation for the correct answer',
   })
@@ -72,6 +80,14 @@ export class UpdateQuestionDto {
   @IsOptional()
   @IsInt()
   correctAnswerIndex?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Index of the user\'s selected answer',
+  })
+  @IsOptional()
+  @IsInt()
+  userAnswerIndex?: number;
 
   @ApiPropertyOptional({
     example: '2 + 2 equals 4',

@@ -20,7 +20,7 @@ import {
 import { ParentService } from './parent.service';
 import { CreateParentDto, UpdateParentDto } from './dto/parent.dto';
 import { CreateChildDto, UpdateChildDto } from './dto/child.dto';
-import { QuizDto, UpdateQuizDto, GenerateQuizDto } from './dto/quiz.dto';
+import { QuizDto, UpdateQuizDto, GenerateQuizDto, SubmitQuizAnswersDto } from './dto/quiz.dto';
 import { QuestionDto, UpdateQuestionDto } from './dto/question.dto';
 import { AuthService } from 'src/auth/auth.service';
 
@@ -29,7 +29,7 @@ import { AuthService } from 'src/auth/auth.service';
 export class ParentController {
   constructor(private readonly parentService: ParentService,
     private readonly authService: AuthService,
-  ) {}
+  ) { }
 
   // ─────────────────────────────
   // 👨‍👩‍👧 PARENT ROUTES
@@ -168,10 +168,13 @@ export class ParentController {
   // ─────────────────────────────
 
   @Post(':parentId/kids/:kidId/quizzes')
-  @ApiOperation({ summary: 'Generate and add a quiz to a child' })
+  @ApiOperation({
+    summary: 'Generate and add a quiz to a child',
+    description: 'Generate a new quiz. If body is empty or missing required fields, generates a retry quiz based on incorrectly answered questions. Otherwise, generates a normal quiz based on provided parameters.'
+  })
   @ApiParam({ name: 'parentId', description: 'Parent ID' })
   @ApiParam({ name: 'kidId', description: 'Child ID' })
-  @ApiBody({ type: GenerateQuizDto })
+  @ApiBody({ type: GenerateQuizDto, required: false })
   @ApiResponse({
     status: 201,
     description: 'Quiz successfully generated and added',
@@ -228,6 +231,26 @@ export class ParentController {
     @Body() body: UpdateQuizDto,
   ) {
     return this.parentService.updateQuiz(parentId, kidId, quizId, body);
+  }
+
+  @Post(':parentId/kids/:kidId/quizzes/:quizId/submit')
+  @ApiOperation({ 
+    summary: 'Submit quiz answers',
+    description: 'Submit user answers for a quiz. This will update each question with the user\'s answer, calculate the score, and mark the quiz as answered.'
+  })
+  @ApiParam({ name: 'parentId', description: 'Parent ID' })
+  @ApiParam({ name: 'kidId', description: 'Child ID' })
+  @ApiParam({ name: 'quizId', description: 'Quiz ID' })
+  @ApiBody({ type: SubmitQuizAnswersDto })
+  @ApiResponse({ status: 200, description: 'Quiz answers submitted successfully' })
+  @ApiNotFoundResponse({ description: 'Parent, child, or quiz not found' })
+  async submitQuizAnswers(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('quizId') quizId: string,
+    @Body() body: SubmitQuizAnswersDto,
+  ) {
+    return this.parentService.submitQuizAnswers(parentId, kidId, quizId, body.answers);
   }
 
   @Delete(':parentId/kids/:kidId/quizzes/:quizId')

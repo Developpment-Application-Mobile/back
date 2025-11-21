@@ -12,6 +12,9 @@ export class Question {
   correctAnswerIndex: number;
 
   @Prop()
+  userAnswerIndex?: number;
+
+  @Prop()
   explanation?: string;
 
   @Prop()

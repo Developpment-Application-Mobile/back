@@ -1,6 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Question, QuestionSchema } from './question.schema';
-import { v4 as uuidv4 } from 'uuid';
 
 @Schema() // ✅ mark as embedded
 export class Quiz {
@@ -12,6 +11,9 @@ export class Quiz {
 
   @Prop({ default: 0 })
   answered: number;
+
+  @Prop({ default: false })
+  isAnswered: boolean;
 
   @Prop({ required: true })
   type: string;

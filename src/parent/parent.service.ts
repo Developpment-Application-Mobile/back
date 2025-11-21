@@ -8,7 +8,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 @Injectable()
 export class ParentService {
-  constructor(@InjectModel(Parent.name) private parentModel: Model<Parent>) {}
+  constructor(@InjectModel(Parent.name) private readonly parentModel: Model<Parent>) { }
 
   // ─────────────────────────────
   // 👨‍👩‍👧 PARENT METHODS
@@ -206,17 +206,65 @@ export class ParentService {
       generationConfig: { responseMimeType: 'application/json' },
     });
 
-    const subject = quizData.subject;
-    const difficulty = quizData.difficulty;
-    const nbrQuestions = quizData.nbrQuestions;
-    const topic = quizData.topic;
+    // Check if this is retry mode (empty body or missing required fields)
+    const isRetryMode = !quizData?.subject || !quizData?.difficulty || !quizData?.nbrQuestions;
 
-    const title = `${subject}${topic ? ` - ${topic}` : ''} Quiz`;
+    let prompt: string;
+    let title: string;
+    let fallbackType: string;
+    let fallbackLevel: string;
 
-    const prompt =
-      `Generate a JSON object for a quiz with the following structure:\n` +
-      `{"title":"string","type":"string","answered":0,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}` +
-      `\nRequirements:\n- subject: ${subject}\n- difficulty: ${difficulty}\n- number_of_questions: ${nbrQuestions}\n- topic: ${topic || 'none'}\n- Ensure strict JSON output, no markdown, no extra text.`;
+    if (isRetryMode) {
+      // Retry mode: generate quiz based on incorrectly answered questions
+      const incorrectQuestions = this.getIncorrectlyAnsweredQuestions(child);
+
+      if (incorrectQuestions.length === 0) {
+        throw new NotFoundException('No incorrectly answered questions found. Please complete some quizzes first or provide quiz parameters.');
+      }
+
+      // Analyze topics and difficulty levels from incorrect questions
+      const topics = incorrectQuestions.map(q => q.type);
+      const levels = incorrectQuestions.map(q => q.level);
+      const mostCommonTopic = this.getMostCommon(topics);
+      const mostCommonLevel = this.getMostCommon(levels);
+
+      fallbackType = mostCommonTopic;
+      fallbackLevel = mostCommonLevel;
+      title = `Retry Quiz - ${mostCommonTopic}`;
+
+      const questionList = incorrectQuestions
+        .slice(0, 5)
+        .map((q, i) => `${i + 1}. ${q.questionText} (Type: ${q.type}, Level: ${q.level})`)
+        .join('\n');
+
+      prompt =
+        `Generate a JSON object for a retry quiz to help a student improve. Use this structure:\n` +
+        `{"title":"string","type":"string","answered":0,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}\n` +
+        `\nThe student struggled with these questions:\n${questionList}\n` +
+        `\nRequirements:\n` +
+        `- Generate ${Math.min(incorrectQuestions.length, 10)} new questions similar to the ones above\n` +
+        `- Focus on subject: ${mostCommonTopic}\n` +
+        `- Use difficulty level: ${mostCommonLevel}\n` +
+        `- Questions should help reinforce missed concepts\n` +
+        `- Ensure strict JSON output, no markdown, no extra text.`;
+    } else {
+      // Normal mode: generate quiz based on provided parameters
+      const subject = quizData.subject;
+      const difficulty = quizData.difficulty;
+      const nbrQuestions = quizData.nbrQuestions;
+      const topic = quizData.topic;
+
+      fallbackType = subject;
+      fallbackLevel = difficulty;
+
+      const topicSuffix = topic ? ` - ${topic}` : '';
+      title = `${subject}${topicSuffix} Quiz`;
+
+      prompt =
+        `Generate a JSON object for a quiz with the following structure:\n` +
+        `{"title":"string","type":"string","answered":0,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}` +
+        `\nRequirements:\n- subject: ${subject}\n- difficulty: ${difficulty}\n- number_of_questions: ${nbrQuestions}\n- topic: ${topic || 'none'}\n- Ensure strict JSON output, no markdown, no extra text.`;
+    }
 
     const text = await this.generateContentWithRetry(model, prompt, 3);
     console.log('Gemini API response:', text);
@@ -249,25 +297,26 @@ export class ParentService {
 
     const quiz = {
       title: generated.title || title,
-      type: generated.type || subject,
+      type: generated.type || fallbackType,
       answered: 0,
+      isAnswered: false,
       score: generated.score ?? 0,
       questions: Array.isArray(generated.questions)
         ? generated.questions.map((q: any) => ({
-            questionText: q.questionText,
-            options: q.options,
-            correctAnswerIndex: q.correctAnswerIndex,
-            explanation: q.explanation,
-            imageUrl: q.imageUrl,
-            type: q.type || subject,
-            level: q.level || difficulty,
-          }))
+          questionText: q.questionText,
+          options: q.options,
+          correctAnswerIndex: q.correctAnswerIndex,
+          explanation: q.explanation,
+          imageUrl: q.imageUrl,
+          type: q.type || fallbackType,
+          level: q.level || fallbackLevel,
+        }))
         : [],
     };
 
     child.quizzes.push(quiz);
     await parent.save();
-    return child.quizzes[child.quizzes.length - 1];
+    return child.quizzes.at(-1);
   }
 
   async getAllQuizzes(parentId: string, kidId: string) {
@@ -308,6 +357,58 @@ export class ParentService {
     return quiz;
   }
 
+  async submitQuizAnswers(
+    parentId: string,
+    kidId: string,
+    quizId: string,
+    answers: number[],
+  ) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const quiz = child.quizzes.find((q: any) => q._id?.toString() === quizId);
+    if (!quiz) throw new NotFoundException('Quiz not found');
+
+    if (answers.length !== quiz.questions.length) {
+      throw new NotFoundException(
+        `Expected ${quiz.questions.length} answers but received ${answers.length}`,
+      );
+    }
+
+    // Update each question with user's answer
+    let correctCount = 0;
+    for (let index = 0; index < quiz.questions.length; index++) {
+      const question = quiz.questions[index];
+      question.userAnswerIndex = answers[index];
+      if (answers[index] === question.correctAnswerIndex) {
+        correctCount++;
+      }
+    }
+
+    // Calculate score as percentage
+    const score = Math.round((correctCount / quiz.questions.length) * 100);
+    
+    // Update quiz properties
+    quiz.isAnswered = true;
+    quiz.answered = quiz.questions.length;
+    quiz.score = score;
+
+    // Update child's total score
+    child.Score = (child.Score || 0) + score;
+
+    parent.markModified('children');
+    await parent.save();
+
+    return {
+      quiz,
+      correctAnswers: correctCount,
+      totalQuestions: quiz.questions.length,
+      score,
+    };
+  }
+
   async deleteQuiz(parentId: string, kidId: string, quizId: string) {
     const parent = await this.parentModel.findById(parentId);
     if (!parent) throw new NotFoundException('Parent not found');
@@ -344,7 +445,7 @@ export class ParentService {
 
     quiz.questions.push(questionData.question ?? questionData);
     await parent.save();
-    return quiz.questions[quiz.questions.length - 1];
+    return quiz.questions.at(-1);
   }
 
   async updateQuestion(
@@ -406,5 +507,48 @@ export class ParentService {
   // ─────────────────────────────
   async findByEmail(email: string) {
     return this.parentModel.findOne({ email }).exec();
+  }
+
+  // ─────────────────────────────
+  // 🔄 HELPER METHODS FOR RETRY MODE
+  // ─────────────────────────────
+  private getIncorrectlyAnsweredQuestions(child: any): any[] {
+    const incorrectQuestions: any[] = [];
+
+    for (const quiz of child.quizzes || []) {
+      for (const question of quiz.questions || []) {
+        // Question is incorrect if userAnswerIndex exists and doesn't match correctAnswerIndex
+        if (
+          question.userAnswerIndex !== undefined &&
+          question.userAnswerIndex !== null &&
+          question.userAnswerIndex !== question.correctAnswerIndex
+        ) {
+          incorrectQuestions.push(question);
+        }
+      }
+    }
+
+    return incorrectQuestions;
+  }
+
+  private getMostCommon(items: string[]): string {
+    if (items.length === 0) return 'general';
+
+    const counts = items.reduce((acc, item) => {
+      acc[item] = (acc[item] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    let maxCount = 0;
+    let mostCommon = items[0];
+
+    for (const [item, count] of Object.entries(counts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        mostCommon = item;
+      }
+    }
+
+    return mostCommon;
   }
 }
