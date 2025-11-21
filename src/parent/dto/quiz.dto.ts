@@ -61,9 +61,9 @@ export class UpdateQuizDto {
 }
 
 export class SubmitQuizAnswersDto {
-  @ApiProperty({ 
-    example: [0, 2, 1, 3], 
-    description: 'Array of user answer indices corresponding to each question' 
+  @ApiProperty({
+    example: [0, 2, 1, 3],
+    description: 'Array of user answer indices corresponding to each question'
   })
   @IsArray()
   @IsInt({ each: true })

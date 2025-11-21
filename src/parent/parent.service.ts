@@ -389,7 +389,7 @@ export class ParentService {
 
     // Calculate score as percentage
     const score = Math.round((correctCount / quiz.questions.length) * 100);
-    
+
     // Update quiz properties
     quiz.isAnswered = true;
     quiz.answered = quiz.questions.length;

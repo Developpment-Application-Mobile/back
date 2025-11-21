@@ -234,7 +234,7 @@ export class ParentController {
   }
 
   @Post(':parentId/kids/:kidId/quizzes/:quizId/submit')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Submit quiz answers',
     description: 'Submit user answers for a quiz. This will update each question with the user\'s answer, calculate the score, and mark the quiz as answered.'
   })
