@@ -91,9 +91,55 @@ export class ParentService {
     const parent = await this.parentModel.findById(parentId);
     if (!parent) throw new NotFoundException('Parent not found');
 
+    // Create a comprehensive "Getting Started" quiz with 30 questions across different topics
+    const gettingStartedQuiz = {
+      title: 'Getting Started Quiz',
+      type: 'mixed',
+      answered: 0,
+      isAnswered: false,
+      score: 0,
+      questions: [
+        // Math Questions (10)
+        { questionText: 'What is 5 + 3?', options: ['6', '7', '8', '9'], correctAnswerIndex: 2, explanation: '5 + 3 = 8', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'What is 10 - 4?', options: ['5', '6', '7', '8'], correctAnswerIndex: 1, explanation: '10 - 4 = 6', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'What is 2 × 3?', options: ['4', '5', '6', '7'], correctAnswerIndex: 2, explanation: '2 × 3 = 6', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'What is 12 ÷ 3?', options: ['2', '3', '4', '5'], correctAnswerIndex: 2, explanation: '12 ÷ 3 = 4', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'How many sides does a triangle have?', options: ['2', '3', '4', '5'], correctAnswerIndex: 1, explanation: 'A triangle has 3 sides', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'What is half of 10?', options: ['3', '4', '5', '6'], correctAnswerIndex: 2, explanation: 'Half of 10 is 5', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'Which number comes after 19?', options: ['18', '20', '21', '22'], correctAnswerIndex: 1, explanation: '20 comes after 19', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'What is 7 + 7?', options: ['12', '13', '14', '15'], correctAnswerIndex: 2, explanation: '7 + 7 = 14', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'How many corners does a square have?', options: ['3', '4', '5', '6'], correctAnswerIndex: 1, explanation: 'A square has 4 corners', type: 'math', level: kidData.level || 'beginner' },
+        { questionText: 'What is 15 - 8?', options: ['5', '6', '7', '8'], correctAnswerIndex: 2, explanation: '15 - 8 = 7', type: 'math', level: kidData.level || 'beginner' },
+
+        // Science Questions (10)
+        { questionText: 'What color is the sky on a clear day?', options: ['Green', 'Blue', 'Red', 'Yellow'], correctAnswerIndex: 1, explanation: 'The sky appears blue on a clear day', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'How many legs does a spider have?', options: ['6', '8', '10', '12'], correctAnswerIndex: 1, explanation: 'Spiders have 8 legs', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'What do plants need to grow?', options: ['Candy', 'Toys', 'Water & Sunlight', 'Books'], correctAnswerIndex: 2, explanation: 'Plants need water and sunlight to grow', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'What is the closest star to Earth?', options: ['Moon', 'Mars', 'Sun', 'Venus'], correctAnswerIndex: 2, explanation: 'The Sun is the closest star to Earth', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'What do bees make?', options: ['Milk', 'Honey', 'Butter', 'Cheese'], correctAnswerIndex: 1, explanation: 'Bees make honey', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'How many wings does a bird have?', options: ['1', '2', '3', '4'], correctAnswerIndex: 1, explanation: 'Birds have 2 wings', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'What season comes after winter?', options: ['Summer', 'Fall', 'Spring', 'Autumn'], correctAnswerIndex: 2, explanation: 'Spring comes after winter', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'What do fish use to breathe underwater?', options: ['Lungs', 'Gills', 'Nose', 'Mouth'], correctAnswerIndex: 1, explanation: 'Fish breathe underwater using gills', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'What is water made of?', options: ['Air', 'Hydrogen & Oxygen', 'Sugar', 'Salt'], correctAnswerIndex: 1, explanation: 'Water is made of hydrogen and oxygen (H2O)', type: 'science', level: kidData.level || 'beginner' },
+        { questionText: 'Which planet is known as the Red Planet?', options: ['Earth', 'Mars', 'Jupiter', 'Venus'], correctAnswerIndex: 1, explanation: 'Mars is known as the Red Planet', type: 'science', level: kidData.level || 'beginner' },
+
+        // General Knowledge Questions (10)
+        { questionText: 'How many days are in a week?', options: ['5', '6', '7', '8'], correctAnswerIndex: 2, explanation: 'A week has 7 days', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'How many months are in a year?', options: ['10', '11', '12', '13'], correctAnswerIndex: 2, explanation: 'A year has 12 months', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'What is the first day of the week?', options: ['Monday', 'Sunday', 'Saturday', 'Friday'], correctAnswerIndex: 1, explanation: 'Sunday is the first day of the week', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'What color is a banana?', options: ['Red', 'Blue', 'Yellow', 'Green'], correctAnswerIndex: 2, explanation: 'A ripe banana is yellow', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'How many hours are in a day?', options: ['12', '20', '24', '30'], correctAnswerIndex: 2, explanation: 'A day has 24 hours', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'What animal says "meow"?', options: ['Dog', 'Cat', 'Cow', 'Duck'], correctAnswerIndex: 1, explanation: 'A cat says meow', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'What do we use to write on paper?', options: ['Fork', 'Spoon', 'Pencil', 'Plate'], correctAnswerIndex: 2, explanation: 'We use a pencil to write on paper', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'What shape is a ball?', options: ['Square', 'Triangle', 'Circle', 'Rectangle'], correctAnswerIndex: 2, explanation: 'A ball is round/circular', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'What do we drink when we are thirsty?', options: ['Sand', 'Water', 'Paper', 'Wood'], correctAnswerIndex: 1, explanation: 'We drink water when thirsty', type: 'general', level: kidData.level || 'beginner' },
+        { questionText: 'How many eyes do most people have?', options: ['1', '2', '3', '4'], correctAnswerIndex: 1, explanation: 'Most people have 2 eyes', type: 'general', level: kidData.level || 'beginner' },
+      ],
+    };
+
     parent.children.push({
       ...kidData,
-      quizzes: [],
+      quizzes: [gettingStartedQuiz],
       score: 0,
     });
 
