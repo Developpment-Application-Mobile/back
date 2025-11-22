@@ -23,6 +23,7 @@ import { CreateChildDto, UpdateChildDto } from './dto/child.dto';
 import { QuizDto, UpdateQuizDto, GenerateQuizDto, SubmitQuizAnswersDto } from './dto/quiz.dto';
 import { QuestionDto, UpdateQuestionDto } from './dto/question.dto';
 import { AuthService } from 'src/auth/auth.service';
+import { GeneratePuzzleDto, SubmitPuzzleDto } from './dto/puzzle.dto';
 
 @ApiTags('parents')
 @Controller('parents')
@@ -30,6 +31,99 @@ export class ParentController {
   constructor(private readonly parentService: ParentService,
     private readonly authService: AuthService,
   ) { }
+
+  // ─────────────────────────────
+// 🧩 PUZZLE ROUTES
+// ─────────────────────────────
+
+@Post(':parentId/kids/:kidId/puzzles')
+@ApiOperation({
+  summary: 'Generate a puzzle for a child',
+  description: 'Generate a new puzzle. If body is empty, generates an adaptive puzzle based on performance.'
+})
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiBody({ type: GeneratePuzzleDto, required: false })
+@ApiResponse({ status: 201, description: 'Puzzle successfully generated' })
+@ApiNotFoundResponse({ description: 'Parent or child not found' })
+async generatePuzzle(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Body() puzzleData: GeneratePuzzleDto,
+) {
+  // If no data provided, generate adaptive puzzle
+  if (!puzzleData || Object.keys(puzzleData).length === 0) {
+    return this.parentService.generateAdaptivePuzzle(parentId, kidId);
+  }
+  return this.parentService.generatePuzzle(parentId, kidId, puzzleData);
+}
+
+@Get(':parentId/kids/:kidId/puzzles')
+@ApiOperation({ summary: 'Get all puzzles for a child' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiResponse({ status: 200, description: 'List of puzzles' })
+@ApiNotFoundResponse({ description: 'Parent or child not found' })
+async getAllPuzzles(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+) {
+  return this.parentService.getAllPuzzles(parentId, kidId);
+}
+
+@Get(':parentId/kids/:kidId/puzzles/:puzzleId')
+@ApiOperation({ summary: 'Get a puzzle by ID' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiParam({ name: 'puzzleId', description: 'Puzzle ID' })
+@ApiResponse({ status: 200, description: 'Puzzle found' })
+@ApiNotFoundResponse({ description: 'Parent, child, or puzzle not found' })
+async getPuzzleById(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('puzzleId') puzzleId: string,
+) {
+  return this.parentService.getPuzzleById(parentId, kidId, puzzleId);
+}
+
+@Post(':parentId/kids/:kidId/puzzles/:puzzleId/submit')
+@ApiOperation({
+  summary: 'Submit puzzle solution',
+  description: 'Submit the arrangement of puzzle pieces to check if solved correctly.'
+})
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiParam({ name: 'puzzleId', description: 'Puzzle ID' })
+@ApiBody({ type: SubmitPuzzleDto })
+@ApiResponse({ status: 200, description: 'Solution checked' })
+@ApiNotFoundResponse({ description: 'Parent, child, or puzzle not found' })
+async submitPuzzleSolution(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('puzzleId') puzzleId: string,
+  @Body() submission: SubmitPuzzleDto,
+) {
+  return this.parentService.submitPuzzleSolution(parentId, kidId, puzzleId, submission);
+}
+
+@Delete(':parentId/kids/:kidId/puzzles/:puzzleId')
+@ApiOperation({ summary: 'Delete a puzzle' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiParam({ name: 'puzzleId', description: 'Puzzle ID' })
+@ApiResponse({ status: 200, description: 'Puzzle deleted' })
+@ApiNotFoundResponse({ description: 'Parent, child, or puzzle not found' })
+async deletePuzzle(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('puzzleId') puzzleId: string,
+) {
+  return this.parentService.deletePuzzle(parentId, kidId, puzzleId);
+}
+
+
+
+
 
   // ─────────────────────────────
   // 👨‍👩‍👧 PARENT ROUTES
