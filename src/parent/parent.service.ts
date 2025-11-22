@@ -95,7 +95,7 @@ export class ParentService {
     const gettingStartedQuiz = {
       title: 'Getting Started Quiz',
       type: 'mixed',
-      answered: 0,
+      
       isAnswered: false,
       score: 0,
       questions: [
@@ -141,6 +141,7 @@ export class ParentService {
       ...kidData,
       quizzes: [gettingStartedQuiz],
       score: 0,
+      parentId: parentId,
     });
 
     return parent.save();
@@ -186,7 +187,7 @@ export class ParentService {
     const childUrl = child._id?.toString();
     const qrData = await QRCode.toDataURL(childUrl);
 
-    return { child: { name: child.name, id: child._id }, qr: qrData };
+    return { child: { name: child.name, id: child._id, parentId: parent._id }, qr: qrData };
   }
 
   // ✅ Get child by MongoDB _id (when QR is scanned)
@@ -199,7 +200,10 @@ export class ParentService {
     );
     if (!child) throw new NotFoundException('Child not found');
 
-    return child;
+    if (!child.parentId) {
+      child.parentId = parent._id.toString();
+    }
+    return { ...child.toObject?.() ?? child, parentId: parent._id.toString() };
   }
 
   // ─────────────────────────────
@@ -285,7 +289,7 @@ export class ParentService {
 
       prompt =
         `Generate a JSON object for a retry quiz to help a student improve. Use this structure:\n` +
-        `{"title":"string","type":"string","answered":0,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}\n` +
+        `{"title":"string","type":"string","isAnswered":false,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}\n` +
         `\nThe student struggled with these questions:\n${questionList}\n` +
         `\nRequirements:\n` +
         `- Generate ${Math.min(incorrectQuestions.length, 10)} new questions similar to the ones above\n` +
@@ -308,7 +312,7 @@ export class ParentService {
 
       prompt =
         `Generate a JSON object for a quiz with the following structure:\n` +
-        `{"title":"string","type":"string","answered":0,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}` +
+        `{"title":"string","type":"string","isAnswered":false,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}` +
         `\nRequirements:\n- subject: ${subject}\n- difficulty: ${difficulty}\n- number_of_questions: ${nbrQuestions}\n- topic: ${topic || 'none'}\n- Ensure strict JSON output, no markdown, no extra text.`;
     }
 
@@ -344,7 +348,7 @@ export class ParentService {
     const quiz = {
       title: generated.title || title,
       type: generated.type || fallbackType,
-      answered: 0,
+      
       isAnswered: false,
       score: generated.score ?? 0,
       questions: Array.isArray(generated.questions)
@@ -438,7 +442,7 @@ export class ParentService {
 
     // Update quiz properties
     quiz.isAnswered = true;
-    quiz.answered = quiz.questions.length;
+  
     quiz.score = score;
 
     // Update child's total score

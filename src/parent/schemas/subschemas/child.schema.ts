@@ -21,6 +21,10 @@ export class Child extends Document {
 
   @Prop({ default: 0 })
   Score: number;
+
+  // Reference back to parent container document (redundant but useful for responses)
+  @Prop({ type: String })
+  parentId?: string;
 }
 
 export const ChildSchema = SchemaFactory.createForClass(Child);

@@ -52,7 +52,7 @@ export class UpdateQuizDto {
   })
   @IsOptional()
   @IsInt()
-  answered?: number;
+  isAnswered?: Boolean;
 
   @ApiPropertyOptional({ example: 85, description: 'Quiz score' })
   @IsOptional()

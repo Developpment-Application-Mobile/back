@@ -9,8 +9,6 @@ export class Quiz {
   @Prop({ type: [QuestionSchema], default: [] })
   questions: Question[];
 
-  @Prop({ default: 0 })
-  answered: number;
 
   @Prop({ default: false })
   isAnswered: boolean;
