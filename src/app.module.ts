@@ -5,6 +5,7 @@ import { ParentModule } from './parent/parent.module';
 import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
 import { RedirectModule } from './redirect/redirect.module';
+import { PuzzleModule } from './puzzle/puzzle.module';
 
 @Module({
   imports: [
