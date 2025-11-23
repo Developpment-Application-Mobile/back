@@ -23,6 +23,7 @@ import { RedirectModule } from './redirect/redirect.module';
 
     ParentModule,
     AuthModule,
+    PuzzleModule,
   ],
 })
 export class AppModule {}

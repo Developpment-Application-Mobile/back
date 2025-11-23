@@ -9,6 +9,389 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 @Injectable()
 export class ParentService {
   constructor(@InjectModel(Parent.name) private readonly parentModel: Model<Parent>) { }
+ // ===== Add to parent.service.ts =====
+// Add these methods to your existing ParentService class
+
+// ─────────────────────────────
+// 🧩 PUZZLE METHODS
+// ─────────────────────────────
+
+async generatePuzzle(parentId: string, kidId: string, puzzleData: any) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  const key = process.env.GOOGLE_API_KEY;
+  if (!key) throw new NotFoundException('Missing GOOGLE_API_KEY');
+
+  const genAI = new GoogleGenerativeAI(key);
+  const model = genAI.getGenerativeModel({
+    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+    generationConfig: { responseMimeType: 'application/json' },
+  });
+
+  // Determine puzzle parameters based on child's age and level
+  const childAge = child.age || 7;
+  const childLevel = child.level || 'beginner';
+  
+  const type = puzzleData?.type || this.getPuzzleTypeForAge(childAge);
+  const difficulty = puzzleData?.difficulty || this.getDifficultyForLevel(childLevel);
+  const gridSize = puzzleData?.gridSize || this.getGridSizeForDifficulty(difficulty);
+  const topic = puzzleData?.topic || this.getRandomTopic(childAge);
+
+  const prompt = this.buildPuzzlePrompt(type, difficulty, gridSize, topic, childAge);
+  
+  const text = await this.generateContentWithRetry(model, prompt, 3);
+  
+  let parsedText = text?.trim() ?? '';
+  if (parsedText.startsWith('```')) {
+    parsedText = parsedText.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+  }
+
+  let generated: any;
+  try {
+    generated = JSON.parse(parsedText);
+  } catch {
+    const start = parsedText.indexOf('{');
+    const end = parsedText.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      generated = JSON.parse(parsedText.slice(start, end + 1));
+    } else {
+      throw new NotFoundException('Failed to parse puzzle generation response');
+    }
+  }
+
+  // Create shuffled pieces
+  const pieces = this.createPuzzlePieces(generated, gridSize, type);
+
+  const puzzle = {
+    title: generated.title || `${topic} Puzzle`,
+    type: type,
+    difficulty: difficulty,
+    gridSize: gridSize,
+    pieces: pieces,
+    hint: generated.hint || '',
+    solution: generated.solution || '',
+    imageUrl: generated.imageUrl || '',
+    isCompleted: false,
+    attempts: 0,
+    timeSpent: 0,
+    score: 0,
+    completedAt: null as Date | null,
+  };
+
+  // Initialize puzzles array if not exists
+  if (!child.puzzles) {
+    child.puzzles = [];
+  }
+
+  child.puzzles.push(puzzle as any);
+  parent.markModified('children');
+  await parent.save();
+
+  return child.puzzles.at(-1);
+}
+
+private buildPuzzlePrompt(type: string, difficulty: string, gridSize: number, topic: string, age: number): string {
+  const totalPieces = gridSize * gridSize;
+  
+  const basePrompt = `Generate a JSON object for a ${type} puzzle for a ${age}-year-old child.
+  
+Structure required:
+{
+  "title": "string",
+  "type": "${type}",
+  "difficulty": "${difficulty}",
+  "hint": "string (helpful hint for the child)",
+  "solution": "string (the correct answer or arrangement)",
+  "pieces": [array of piece content]
+}
+
+Requirements:
+- Topic: ${topic}
+- Difficulty: ${difficulty}
+- Number of pieces: ${totalPieces}
+- Age-appropriate content for ${age}-year-old
+- Educational and fun
+- Clear hint that helps without giving away the answer
+`;
+
+  switch (type) {
+    case 'word':
+      return basePrompt + `
+- Create a word scramble puzzle
+- "pieces" should be an array of ${totalPieces} letters that form a word
+- The word should be related to ${topic}
+- "solution" is the correct word
+- Example: pieces: ["C", "A", "T"] for the word "CAT"`;
+
+    case 'number':
+      return basePrompt + `
+- Create a number sequence puzzle
+- "pieces" should be an array of ${totalPieces} numbers
+- The child needs to arrange them in correct order (ascending, descending, or pattern)
+- "solution" describes the pattern
+- Difficulty ${difficulty}: use numbers appropriate for age ${age}`;
+
+    case 'sequence':
+      return basePrompt + `
+- Create a logical sequence puzzle
+- "pieces" should be an array of ${totalPieces} items (words or short phrases)
+- Items should be arranged in a logical order (e.g., days of week, steps in a process)
+- "solution" is the correct sequence description
+- Topic: ${topic}`;
+
+    case 'pattern':
+      return basePrompt + `
+- Create a pattern recognition puzzle
+- "pieces" should be an array of ${totalPieces} elements following a pattern
+- One piece should be marked as "?" for the child to identify
+- "solution" is what should replace "?"
+- Use shapes, colors, or numbers appropriate for age ${age}`;
+
+    default:
+      return basePrompt + `
+- Create an image-based puzzle description
+- "pieces" should describe ${totalPieces} parts of an image related to ${topic}
+- "imageUrl" should be empty (will be set separately)
+- "solution" describes what the complete image shows`;
+  }
+}
+
+private createPuzzlePieces(generated: any, gridSize: number, _type: string): Array<{
+  id: number;
+  correctPosition: number;
+  currentPosition: number;
+  content: string;
+  imageUrl: string;
+}> {
+  const totalPieces = gridSize * gridSize;
+  const pieces: Array<{
+    id: number;
+    correctPosition: number;
+    currentPosition: number;
+    content: string;
+    imageUrl: string;
+  }> = [];
+  
+  const contentArray = generated.pieces || [];
+  
+  for (let i = 0; i < totalPieces; i++) {
+    pieces.push({
+      id: i,
+      correctPosition: i,
+      currentPosition: i,
+      content: String(contentArray[i] || `Piece ${i + 1}`),
+      imageUrl: '',
+    });
+  }
+
+  // Shuffle pieces (Fisher-Yates)
+  const shuffledPositions = [...Array(totalPieces).keys()];
+  for (let i = shuffledPositions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledPositions[i], shuffledPositions[j]] = [shuffledPositions[j], shuffledPositions[i]];
+  }
+
+  // Assign shuffled positions
+  for (let i = 0; i < pieces.length; i++) {
+    pieces[i].currentPosition = shuffledPositions[i];
+  }
+
+  return pieces;
+}
+
+private getPuzzleTypeForAge(age: number): string {
+  if (age <= 5) return 'word';
+  if (age <= 7) {
+    const types = ['word', 'number', 'sequence'];
+    return types[Math.floor(Math.random() * types.length)];
+  }
+  const types = ['word', 'number', 'sequence', 'pattern'];
+  return types[Math.floor(Math.random() * types.length)];
+}
+
+private getDifficultyForLevel(level: string): string {
+  switch (level?.toLowerCase()) {
+    case 'advanced': return 'hard';
+    case 'intermediate': return 'medium';
+    default: return 'easy';
+  }
+}
+
+private getGridSizeForDifficulty(difficulty: string): number {
+  switch (difficulty) {
+    case 'hard': return 4;
+    case 'medium': return 3;
+    default: return 2;
+  }
+}
+
+private getRandomTopic(age: number): string {
+  const youngTopics = ['Animals', 'Colors', 'Fruits', 'Numbers', 'Shapes', 'Family'];
+  const olderTopics = ['Science', 'Nature', 'Space', 'History', 'Geography', 'Sports'];
+  const topics = age <= 6 ? youngTopics : [...youngTopics, ...olderTopics];
+  return topics[Math.floor(Math.random() * topics.length)];
+}
+
+async getAllPuzzles(parentId: string, kidId: string) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+  
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+  
+  return child.puzzles || [];
+}
+
+async getPuzzleById(parentId: string, kidId: string, puzzleId: string) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+  
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  const puzzle = (child.puzzles as any[])?.find((p: any) => p._id?.toString() === puzzleId);
+  if (!puzzle) throw new NotFoundException('Puzzle not found');
+  
+  return puzzle;
+}
+
+async submitPuzzleSolution(
+  parentId: string,
+  kidId: string,
+  puzzleId: string,
+  submission: { positions: number[]; timeSpent?: number }
+) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  const puzzle = (child.puzzles as any[])?.find((p: any) => p._id?.toString() === puzzleId);
+  if (!puzzle) throw new NotFoundException('Puzzle not found');
+
+  puzzle.attempts += 1;
+  puzzle.timeSpent += submission.timeSpent || 0;
+
+  // Check if solution is correct
+  const isCorrect = this.checkPuzzleSolution(puzzle, submission.positions);
+
+  if (isCorrect) {
+    puzzle.isCompleted = true;
+    puzzle.completedAt = new Date();
+    
+    // Calculate score based on attempts and time
+    const baseScore = puzzle.difficulty === 'hard' ? 100 : puzzle.difficulty === 'medium' ? 75 : 50;
+    const attemptPenalty = Math.max(0, (puzzle.attempts - 1) * 5);
+    const timePenalty = Math.min(20, Math.floor(puzzle.timeSpent / 60));
+    puzzle.score = Math.max(10, baseScore - attemptPenalty - timePenalty);
+
+    // Update child's total score
+    child.Score = (child.Score || 0) + puzzle.score;
+  }
+
+  // Update piece positions
+  submission.positions.forEach((pos: number, index: number) => {
+    if (puzzle.pieces[index]) {
+      puzzle.pieces[index].currentPosition = pos;
+    }
+  });
+
+  parent.markModified('children');
+  await parent.save();
+
+  return {
+    puzzle,
+    isCorrect,
+    score: isCorrect ? puzzle.score : 0,
+    attempts: puzzle.attempts,
+    message: isCorrect ? 'Congratulations! Puzzle completed!' : 'Not quite right. Try again!',
+  };
+}
+
+private checkPuzzleSolution(puzzle: any, positions: number[]): boolean {
+  if (!puzzle.pieces || positions.length !== puzzle.pieces.length) {
+    return false;
+  }
+
+  return puzzle.pieces.every((piece: any, index: number) => {
+    return positions[index] === piece.correctPosition;
+  });
+}
+
+async deletePuzzle(parentId: string, kidId: string, puzzleId: string) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  const puzzles = child.puzzles as any[];
+  const index = puzzles?.findIndex((p: any) => p._id?.toString() === puzzleId);
+  if (index === -1 || index === undefined) throw new NotFoundException('Puzzle not found');
+
+  puzzles.splice(index, 1);
+  parent.markModified('children');
+  await parent.save();
+
+  return { message: 'Puzzle deleted successfully' };
+}
+
+// Generate adaptive puzzle based on performance
+async generateAdaptivePuzzle(parentId: string, kidId: string) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  // Analyze past puzzle performance
+  const puzzles = (child.puzzles || []) as any[];
+  const completedPuzzles = puzzles.filter((p: any) => p.isCompleted);
+  
+  let recommendedDifficulty = 'easy';
+  let recommendedType = this.getPuzzleTypeForAge(child.age || 7);
+
+  if (completedPuzzles.length >= 3) {
+    const avgScore = completedPuzzles.reduce((sum: number, p: any) => sum + (p.score || 0), 0) / completedPuzzles.length;
+    
+    if (avgScore >= 80) {
+      recommendedDifficulty = 'hard';
+    } else if (avgScore >= 60) {
+      recommendedDifficulty = 'medium';
+    }
+
+    // Find weakest puzzle type
+    const typeScores: Record<string, { total: number; count: number }> = {};
+    completedPuzzles.forEach((p: any) => {
+      if (!typeScores[p.type]) {
+        typeScores[p.type] = { total: 0, count: 0 };
+      }
+      typeScores[p.type].total += p.score || 0;
+      typeScores[p.type].count += 1;
+    });
+
+    let lowestAvg = Infinity;
+    for (const [type, data] of Object.entries(typeScores)) {
+      const avg = data.total / data.count;
+      if (avg < lowestAvg) {
+        lowestAvg = avg;
+        recommendedType = type;
+      }
+    }
+  }
+
+  return this.generatePuzzle(parentId, kidId, {
+    type: recommendedType,
+    difficulty: recommendedDifficulty,
+  });
+}
+
+
 
   // ─────────────────────────────
   // 👨‍👩‍👧 PARENT METHODS
@@ -95,7 +478,7 @@ export class ParentService {
     const gettingStartedQuiz = {
       title: 'Getting Started Quiz',
       type: 'mixed',
-      
+
       isAnswered: false,
       score: 0,
       questions: [
@@ -348,7 +731,7 @@ export class ParentService {
     const quiz = {
       title: generated.title || title,
       type: generated.type || fallbackType,
-      
+
       isAnswered: false,
       score: generated.score ?? 0,
       questions: Array.isArray(generated.questions)
@@ -427,32 +810,50 @@ export class ParentService {
       );
     }
 
-    // Update each question with user's answer
+    // Update each question with user's answer (persist userAnswerIndex)
     let correctCount = 0;
     for (let index = 0; index < quiz.questions.length; index++) {
-      const question = quiz.questions[index];
-      question.userAnswerIndex = answers[index];
-      if (answers[index] === question.correctAnswerIndex) {
-        correctCount++;
-      }
+      const question: any = quiz.questions[index];
+      const userAns = answers[index];
+      question.userAnswerIndex = userAns; // ensure the field is added under each question
+      if (userAns === question.correctAnswerIndex) correctCount++;
     }
+
+    // Mark modified so mongoose saves nested userAnswerIndex changes
+    parent.markModified('children');
 
     // Calculate score as percentage
     const score = Math.round((correctCount / quiz.questions.length) * 100);
 
     // Update quiz properties
     quiz.isAnswered = true;
-  
+    // If Quiz schema no longer has 'answered', ignore; keeping line conditional
+    if ('answered' in quiz) {
+      (quiz as any).answered = quiz.questions.length;
+    }
     quiz.score = score;
 
     // Update child's total score
     child.Score = (child.Score || 0) + score;
 
-    parent.markModified('children');
     await parent.save();
 
+    // Return quiz with userAnswerIndex included for each question
     return {
-      quiz,
+      quiz: {
+        ...quiz,
+        questions: quiz.questions.map((q: any) => ({
+          _id: q._id,
+          questionText: q.questionText,
+          options: q.options,
+          correctAnswerIndex: q.correctAnswerIndex,
+          userAnswerIndex: q.userAnswerIndex,
+          explanation: q.explanation,
+          imageUrl: q.imageUrl,
+          type: q.type,
+          level: q.level,
+        })),
+      },
       correctAnswers: correctCount,
       totalQuestions: quiz.questions.length,
       score,
