@@ -24,8 +24,8 @@ export class AuthController {
     description: 'Parent successfully registered and logged in',
     type: AuthResponseDto,
   })
-  @ApiBadRequestResponse({ description: 'Bad request - invalid input data' })
-  @ApiConflictResponse({ description: 'Conflict - email already registered' })
+  @ApiBadRequestResponse({ description: 'Invalid input data' })
+  @ApiConflictResponse({ description: 'Email already registered' })
   async signup(@Body() body: SignupDto) {
     return this.authService.signup(body);
   }
@@ -38,10 +38,7 @@ export class AuthController {
     description: 'Login successful',
     type: AuthResponseDto,
   })
-  @ApiUnauthorizedResponse({
-    description: 'Unauthorized - invalid credentials',
-  })
-  @ApiBadRequestResponse({ description: 'Bad request - invalid input data' })
+  @ApiUnauthorizedResponse({ description: 'Invalid credentials' })
   async login(@Body() body: LoginDto) {
     const parent = await this.authService.validateParent(
       body.email,
@@ -51,11 +48,12 @@ export class AuthController {
   }
 
   @Post('forgot-password')
-  forgot(@Body('email') email: string) {
-  return this.authService.forgotPassword(email);
-}
+  async forgot(@Body('email') email: string) {
+    return this.authService.forgotPassword(email);
+  }
 
-@Post('reset-password')
-reset(@Body() body: { token: string; newPassword: string }) {
-  return this.authService.resetPassword(body.token, body.newPassword);
-}}
+  @Post('reset-password')
+  async reset(@Body() body: { token: string; newPassword: string }) {
+    return this.authService.resetPassword(body.token, body.newPassword);
+  }
+}

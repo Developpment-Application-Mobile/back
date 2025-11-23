@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { ParentService } from '../parent/parent.service';
@@ -14,11 +20,9 @@ export class AuthService {
     private readonly parentService: ParentService,
     private readonly jwtService: JwtService,
 
-    // ✅ Inject MongoDB Parent model
     @InjectModel(Parent.name)
     private readonly parentModel: Model<ParentDocument>,
 
-    // ✅ Inject Mail Service
     private readonly mailService: MailService,
   ) {}
 
@@ -31,7 +35,6 @@ export class AuthService {
     email: string;
     password: string;
   }) {
-    // Check if email already exists
     const existing = await this.parentService.findByEmail(email);
     if (existing) throw new ConflictException('Email already registered');
 
@@ -75,36 +78,54 @@ export class AuthService {
     };
   }
 
-  // ─────────────────────────────
-  // 🔐 FORGOT PASSWORD
-  // ─────────────────────────────
+  // ───────────────────────────────────
+  // 🔐 FORGOT PASSWORD (MOBILE)
+  // ───────────────────────────────────
   async forgotPassword(email: string) {
     const parent = await this.parentModel.findOne({ email });
     if (!parent) throw new NotFoundException('Email not found');
 
     const token = randomBytes(32).toString('hex');
-    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    const expiry = new Date(Date.now() + 15 * 60 * 1000);
 
     parent.resetPasswordToken = token;
     parent.resetPasswordExpires = expiry;
     await parent.save();
 
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${token}`;
+    // DEEP LINK (opens mobile app)
+    const resetLink = `${process.env.BACKEND_URL}/reset-password/${token}`;
+
 
     await this.mailService.sendMail(
-      parent.email,
-      'Reset your EduKid password',
-      `
-        <h1>Password Reset</h1>
-        <p>Click below to reset your password:</p>
-        <a href="${resetLink}" target="_blank">${resetLink}</a>
-        <p>This link expires in 15 minutes.</p>
-      `,
-    );
+  parent.email,
+  'Reset your EduKid password',
+  `
+    <h1>Password Reset</h1>
+    <p>Tap the button below to reset your password:</p>
+
+    <a href="${resetLink}"
+       style="display:inline-block;
+              padding:12px 20px;
+              background:#4CAF50;
+              color:white;
+              text-decoration:none;
+              border-radius:6px;">
+      Reset Password
+    </a>
+
+    <p>If the button doesn't work, use this link:</p>
+    <p><a href="${resetLink}">${resetLink}</a></p>
+    <p>This link expires in 15 minutes.</p>
+  `,
+);
+
 
     return { message: 'Reset email sent!' };
   }
 
+  // ───────────────────────────────────
+  // 🔐 RESET PASSWORD
+  // ───────────────────────────────────
   async resetPassword(token: string, newPassword: string) {
     const parent = await this.parentModel.findOne({
       resetPasswordToken: token,
