@@ -20,32 +20,28 @@ export class Child extends Document {
   @Prop({ type: [QuizSchema], default: [] })
   quizzes: Quiz[];
 
-  // ✅ Puzzles array - Simple Object approach with optional fields
-  @Prop({ type: [Object], default: [] })
-  puzzles: Array<{
-    title: string;
-    type: string;
-    difficulty: string;
-    gridSize: number;
-    pieces: Array<{
-      id: number;
-      correctPosition: number;
-      currentPosition: number;
-      content: string;
-      imageUrl?: string;
-    }>;
-    hint?: string;
-    solution?: string;
-    imageUrl?: string;
-    isCompleted: boolean;
-    attempts: number;
-    timeSpent: number;
-    score: number;
-    completedAt?: Date | null;
-  }>;
-
   @Prop({ default: 0 })
   Score: number;
+
+  @Prop({ default: 0 })
+  lifetimeScore: number;
+
+  @Prop({ default: 1 })
+  progressionLevel: number;
+
+  @Prop({ type: [Object], default: [] }) // Using Object for simplicity, or could use GiftSchema
+  inventory: Array<{
+    title: string;
+    cost: number;
+    purchasedAt: Date;
+  }>;
+
+  @Prop({ type: [Object], default: [] }) // Child-specific gift catalog
+  shopCatalog: Array<{
+    _id?: string;
+    title: string;
+    cost: number;
+  }>;
 
   @Prop({ type: String })
   parentId?: string;

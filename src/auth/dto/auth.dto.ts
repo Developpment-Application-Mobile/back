@@ -25,13 +25,13 @@ export class SignupDto {
 
 export class LoginDto {
   @ApiProperty({
-    example: 'john.doe@example.com',
+    example: 'kossaybrahim47@gmail.com',
     description: 'Parent email address',
   })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'password123', description: 'Parent password' })
+  @ApiProperty({ example: 'kossay123', description: 'Parent password' })
   @IsString()
   password: string;
 }

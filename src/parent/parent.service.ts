@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, NotFoundException, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Parent } from './schemas/parent.schema';
 import * as QRCode from 'qrcode';
 import * as bcrypt from 'bcrypt';
@@ -450,8 +450,16 @@ export class ParentService {
     }
     quiz.score = score;
 
-    // Update child's total score
+    // Update child's total score (Spendable)
     child.Score = (child.Score || 0) + score;
+
+    // Update lifetime score (Leveling)
+    child.lifetimeScore = (child.lifetimeScore || 0) + score;
+
+    // Calculate Level: Every 1000 points = 1 level. Starting level is 1.
+    // 0-999 -> Level 1
+    // 1000-1999 -> Level 2
+    child.progressionLevel = Math.floor(child.lifetimeScore / 1000) + 1;
 
     await parent.save();
 
@@ -618,5 +626,108 @@ export class ParentService {
     }
 
     return mostCommon;
+  }
+
+  // ─────────────────────────────
+  // 🎁 GIFT & REWARDS METHODS
+  // ─────────────────────────────
+
+  async createGift(parentId: string, kidId: string, giftData: any) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const newGift = {
+      _id: new Types.ObjectId().toString(),
+      title: giftData.title,
+      cost: giftData.cost,
+    };
+
+    if (!child.shopCatalog) {
+      child.shopCatalog = [];
+    }
+
+    child.shopCatalog.push(newGift);
+    await parent.save();
+    return newGift;
+  }
+
+  async getGifts(parentId: string, kidId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    return child.shopCatalog || [];
+  }
+
+  async deleteGift(parentId: string, kidId: string, giftId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    if (!child.shopCatalog) return { message: 'Gift not found' };
+
+    const initialLength = child.shopCatalog.length;
+    child.shopCatalog = child.shopCatalog.filter(
+      (g: any) => g._id?.toString() !== giftId
+    );
+
+    if (child.shopCatalog.length === initialLength) {
+      throw new NotFoundException('Gift not found');
+    }
+
+    await parent.save();
+    return { message: 'Gift deleted successfully' };
+  }
+
+  async buyGift(parentId: string, kidId: string, giftId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const gift = child.shopCatalog?.find((g: any) => g._id?.toString() === giftId);
+    if (!gift) throw new NotFoundException('Gift not found in catalog');
+
+    // Check if gift has already been purchased
+    if (!child.inventory) {
+      child.inventory = [];
+    }
+
+    const alreadyPurchased = child.inventory.some(
+      (item: any) => item.title === gift.title
+    );
+
+    if (alreadyPurchased) {
+      throw new BadRequestException('You have already purchased this gift');
+    }
+
+    if (child.Score < gift.cost) {
+      throw new BadRequestException('Not enough points to buy this gift');
+    }
+
+    // Deduct points
+    child.Score -= gift.cost;
+
+    // Add to inventory
+    child.inventory.push({
+      title: gift.title,
+      cost: gift.cost,
+      purchasedAt: new Date(),
+    });
+
+    await parent.save();
+    return {
+      message: 'Gift purchased successfully',
+      remainingScore: child.Score,
+      gift: gift
+    };
   }
 }

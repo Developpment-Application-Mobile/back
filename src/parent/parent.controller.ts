@@ -23,7 +23,7 @@ import { CreateChildDto, UpdateChildDto } from './dto/child.dto';
 import { QuizDto, UpdateQuizDto, GenerateQuizDto, SubmitQuizAnswersDto } from './dto/quiz.dto';
 import { QuestionDto, UpdateQuestionDto } from './dto/question.dto';
 import { AuthService } from 'src/auth/auth.service';
-import { GeneratePuzzleDto, SubmitPuzzleDto } from './dto/puzzle.dto';
+import { CreateGiftDto } from './dto/gift.dto';
 
 @ApiTags('parents')
 @Controller('parents')
@@ -33,7 +33,7 @@ export class ParentController {
   ) { }
 
 
-  
+
 
   // ─────────────────────────────
   // 👨‍👩‍👧 PARENT ROUTES
@@ -347,4 +347,66 @@ export class ParentController {
   }
 
 
+  // ─────────────────────────────
+  // 🎁 GIFT & REWARDS ROUTES
+  // ─────────────────────────────
+
+  @Post(':parentId/kids/:kidId/gifts')
+  @ApiOperation({ summary: 'Create a new gift in the child catalog' })
+  @ApiParam({ name: 'parentId', description: 'Parent ID' })
+  @ApiParam({ name: 'kidId', description: 'Child ID' })
+  @ApiBody({ type: CreateGiftDto })
+  @ApiResponse({ status: 201, description: 'Gift successfully created' })
+  @ApiNotFoundResponse({ description: 'Parent or Child not found' })
+  async createGift(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Body() body: CreateGiftDto,
+  ) {
+    return this.parentService.createGift(parentId, kidId, body);
+  }
+
+  @Get(':parentId/kids/:kidId/gifts')
+  @ApiOperation({ summary: 'Get all gifts in the child catalog' })
+  @ApiParam({ name: 'parentId', description: 'Parent ID' })
+  @ApiParam({ name: 'kidId', description: 'Child ID' })
+  @ApiResponse({ status: 200, description: 'List of gifts' })
+  @ApiNotFoundResponse({ description: 'Parent or Child not found' })
+  async getGifts(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+  ) {
+    return this.parentService.getGifts(parentId, kidId);
+  }
+
+  @Delete(':parentId/kids/:kidId/gifts/:giftId')
+  @ApiOperation({ summary: 'Delete a gift from the child catalog' })
+  @ApiParam({ name: 'parentId', description: 'Parent ID' })
+  @ApiParam({ name: 'kidId', description: 'Child ID' })
+  @ApiParam({ name: 'giftId', description: 'Gift ID' })
+  @ApiResponse({ status: 200, description: 'Gift successfully deleted' })
+  @ApiNotFoundResponse({ description: 'Parent, Child, or Gift not found' })
+  async deleteGift(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('giftId') giftId: string,
+  ) {
+    return this.parentService.deleteGift(parentId, kidId, giftId);
+  }
+
+  @Post(':parentId/kids/:kidId/gifts/:giftId/buy')
+  @ApiOperation({ summary: 'Child buys a gift using points' })
+  @ApiParam({ name: 'parentId', description: 'Parent ID' })
+  @ApiParam({ name: 'kidId', description: 'Child ID' })
+  @ApiParam({ name: 'giftId', description: 'Gift ID' })
+  @ApiResponse({ status: 200, description: 'Gift purchased successfully' })
+  @ApiNotFoundResponse({ description: 'Parent, Child, or Gift not found' })
+  @ApiBadRequestResponse({ description: 'Not enough points' })
+  async buyGift(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('giftId') giftId: string,
+  ) {
+    return this.parentService.buyGift(parentId, kidId, giftId);
+  }
 }
