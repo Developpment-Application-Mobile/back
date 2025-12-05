@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Parent } from './schemas/parent.schema';
+import { Parent, ParentDocument } from './schemas/parent.schema';
 import * as QRCode from 'qrcode';
 import * as bcrypt from 'bcrypt';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Quest, QuestStatus, QuestType } from './schemas/subschemas/quest.schema';
 
 @Injectable()
 export class ParentService {
@@ -289,13 +290,15 @@ export class ParentService {
 
       prompt =
         `Generate a JSON object for a retry quiz to help a student improve. Use this structure:\n` +
-        `{"title":"string","type":"string","isAnswered":false,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}\n` +
+        `{"title":"string","type":"string","isAnswered":false,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageKeyword":"string","type":"string","level":"string"}]}\n` +
         `\nThe student struggled with these questions:\n${questionList}\n` +
         `\nRequirements:\n` +
         `- Generate ${Math.min(incorrectQuestions.length, 10)} new questions similar to the ones above\n` +
         `- Focus on subject: ${mostCommonTopic}\n` +
         `- Use difficulty level: ${mostCommonLevel}\n` +
         `- Questions should help reinforce missed concepts\n` +
+        `- IMPORTANT: For questions about concrete objects (animals, fruit, vehicles, colors, shapes), you MUST provide a simple English 'imageKeyword' (e.g., "cat", "apple", "red car").\n` +
+        `- If the question is abstract (math, logic) and no image is suitable, leave "imageKeyword" empty.\n` +
         `- Ensure strict JSON output, no markdown, no extra text.`;
     } else {
       // Normal mode: generate quiz based on provided parameters
@@ -312,8 +315,11 @@ export class ParentService {
 
       prompt =
         `Generate a JSON object for a quiz with the following structure:\n` +
-        `{"title":"string","type":"string","isAnswered":false,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageUrl":"string","type":"string","level":"string"}]}` +
-        `\nRequirements:\n- subject: ${subject}\n- difficulty: ${difficulty}\n- number_of_questions: ${nbrQuestions}\n- topic: ${topic || 'none'}\n- Ensure strict JSON output, no markdown, no extra text.`;
+        `{"title":"string","type":"string","isAnswered":false,"score":0,"questions":[{"questionText":"string","options":["string","string","string","string"],"correctAnswerIndex":0,"explanation":"string","imageKeyword":"string","type":"string","level":"string"}]}` +
+        `\nRequirements:\n- subject: ${subject}\n- difficulty: ${difficulty}\n- number_of_questions: ${nbrQuestions}\n- topic: ${topic || 'none'}\n` +
+        `- IMPORTANT: For questions about concrete objects (animals, fruit, vehicles, colors, shapes), you MUST provide a simple English 'imageKeyword' (e.g., "cat", "apple", "red car").\n` +
+        `- If the question is abstract (math, logic) and no image is suitable, leave "imageKeyword" empty.\n` +
+        `- Ensure strict JSON output, no markdown, no extra text.`;
     }
 
     const text = await this.generateContentWithRetry(model, prompt, 3);
@@ -352,15 +358,23 @@ export class ParentService {
       isAnswered: false,
       score: generated.score ?? 0,
       questions: Array.isArray(generated.questions)
-        ? generated.questions.map((q: any) => ({
-          questionText: q.questionText,
-          options: q.options,
-          correctAnswerIndex: q.correctAnswerIndex,
-          explanation: q.explanation,
-          imageUrl: q.imageUrl,
-          type: q.type || fallbackType,
-          level: q.level || fallbackLevel,
-        }))
+        ? generated.questions.map((q: any) => {
+          let imageUrl = q.imageUrl;
+          if (!imageUrl && q.imageKeyword) {
+            // Convert keyword to a placeholder image URL
+            imageUrl = `https://loremflickr.com/400/300/${encodeURIComponent(q.imageKeyword)}`;
+          }
+
+          return {
+            questionText: q.questionText,
+            options: q.options,
+            correctAnswerIndex: q.correctAnswerIndex,
+            explanation: q.explanation,
+            imageUrl: imageUrl,
+            type: q.type || fallbackType,
+            level: q.level || fallbackLevel,
+          }
+        })
         : [],
     };
 
@@ -415,6 +429,7 @@ export class ParentService {
   ) {
     const parent = await this.parentModel.findById(parentId);
     if (!parent) throw new NotFoundException('Parent not found');
+
     const child = parent.children.find((c: any) => c._id?.toString() === kidId);
     if (!child) throw new NotFoundException('Child not found');
 
@@ -427,43 +442,51 @@ export class ParentService {
       );
     }
 
-    // Update each question with user's answer (persist userAnswerIndex)
+    // ===== CHECK ANSWERS =====
     let correctCount = 0;
-    for (let index = 0; index < quiz.questions.length; index++) {
-      const question: any = quiz.questions[index];
-      const userAns = answers[index];
-      question.userAnswerIndex = userAns; // ensure the field is added under each question
-      if (userAns === question.correctAnswerIndex) correctCount++;
+
+    for (let i = 0; i < quiz.questions.length; i++) {
+      const question: any = quiz.questions[i];
+      const userAns = answers[i];
+
+      question.userAnswerIndex = userAns;
+
+      if (userAns === question.correctAnswerIndex) {
+        correctCount++;
+      }
     }
 
-    // Mark modified so mongoose saves nested userAnswerIndex changes
     parent.markModified('children');
 
-    // Calculate score as percentage
+    // ===== SCORE CALCULATION =====
     const score = Math.round((correctCount / quiz.questions.length) * 100);
 
-    // Update quiz properties
     quiz.isAnswered = true;
-    // If Quiz schema no longer has 'answered', ignore; keeping line conditional
-    if ('answered' in quiz) {
-      (quiz as any).answered = quiz.questions.length;
-    }
     quiz.score = score;
 
-    // Update child's total score (Spendable)
+    // ===== UPDATE CHILD SCORE PROPERTIES =====
     child.Score = (child.Score || 0) + score;
-
-    // Update lifetime score (Leveling)
     child.lifetimeScore = (child.lifetimeScore || 0) + score;
 
-    // Calculate Level: Every 1000 points = 1 level. Starting level is 1.
-    // 0-999 -> Level 1
-    // 1000-1999 -> Level 2
-    child.progressionLevel = Math.floor(child.lifetimeScore / 1000) + 1;
+    // Use non-linear progression level
+    child.progressionLevel = this.calculateLevel(child.lifetimeScore);
+
+    // ===== QUEST SYSTEM: TRIGGER QUEST LOGIC =====
+    const isPerfectScore = score === 100;
+
+    await this.trackQuestProgress(
+      parentId,
+      kidId,
+      QuestType.COMPLETE_QUIZZES,
+      1,           // increment by 1 quiz
+      score,       // points earned
+      isPerfectScore,
+      parent       // <--- Pass existing parent instance
+    );
 
     await parent.save();
 
-    // Return quiz with userAnswerIndex included for each question
+    // ===== RESPONSE =====
     return {
       quiz: {
         ...quiz,
@@ -730,4 +753,243 @@ export class ParentService {
       gift: gift
     };
   }
+
+
+  // ----- Generate initial quests (used when child has no quests) -----
+  private generateInitialQuests(): Quest[] {
+    return [
+      {
+        type: QuestType.COMPLETE_QUIZZES,
+        title: 'Complete 5 Quizzes',
+        description: 'Complete 5 quizzes',
+        target: 5,
+        progress: 0,
+        reward: 100,
+        status: QuestStatus.ACTIVE,
+        progressionLevel: 1,
+      } as any,
+      {
+        type: QuestType.EARN_POINTS,
+        title: 'Earn 200 Points',
+        description: 'Earn 200 points',
+        target: 200,
+        progress: 0,
+        reward: 150,
+        status: QuestStatus.ACTIVE,
+        progressionLevel: 1,
+      } as any,
+      {
+        type: QuestType.PERFECT_SCORE,
+        title: 'Get a Perfect Score',
+        description: 'Get a perfect score on a quiz',
+        target: 1,
+        progress: 0,
+        reward: 200,
+        status: QuestStatus.ACTIVE,
+        progressionLevel: 1,
+      } as any,
+    ];
+  }
+
+  // ----- Generate next quest in progression for a given type -----
+  private generateNextQuest(questType: QuestType, currentLevel: number): Quest {
+    const progressionMap = {
+      [QuestType.COMPLETE_QUIZZES]: {
+        targets: [5, 10, 15, 20],
+        rewards: [100, 200, 300, 400],
+      },
+      [QuestType.COMPLETE_GAMES]: {
+        targets: [3, 5, 10, 15],
+        rewards: [150, 250, 350, 450],
+      },
+      [QuestType.EARN_POINTS]: {
+        targets: [200, 500, 1000, 1500],
+        rewards: [150, 300, 500, 700],
+      },
+      [QuestType.PERFECT_SCORE]: {
+        targets: [1, 3, 5, 10],
+        rewards: [200, 400, 600, 800],
+      },
+    } as any;
+
+    const progression = progressionMap[questType];
+    const nextLevel = (currentLevel || 1) + 1;
+    const idx = Math.min(nextLevel - 1, progression.targets.length - 1);
+
+    return {
+      type: questType,
+      title: (() => {
+        switch (questType) {
+          case QuestType.COMPLETE_QUIZZES:
+            return `Complete ${progression.targets[idx]} Quizzes`;
+          case QuestType.COMPLETE_GAMES:
+            return `Complete ${progression.targets[idx]} Games`;
+          case QuestType.EARN_POINTS:
+            return `Earn ${progression.targets[idx]} Points`;
+          case QuestType.PERFECT_SCORE:
+            return `Get ${progression.targets[idx]} Perfect Score${progression.targets[idx] > 1 ? 's' : ''}`;
+        }
+      })(),
+      description: '',
+      target: progression.targets[idx],
+      progress: 0,
+      reward: progression.rewards[idx],
+      status: QuestStatus.ACTIVE,
+      progressionLevel: nextLevel,
+    } as any;
+  }
+
+  // ----- Get quests for a child (ensures initial generation) -----
+  async getQuests(parentId: string, kidId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    if (!child.quests || !Array.isArray(child.quests) || child.quests.length === 0) {
+      child.quests = this.generateInitialQuests();
+      parent.markModified('children');
+      await parent.save();
+    }
+
+    return child.quests;
+  }
+
+  // ----- Track quest progress (call when quiz/game submitted) -----
+  async trackQuestProgress(
+    parentId: string,
+    kidId: string,
+    questType: QuestType,
+    progressIncrement = 1,
+    pointsEarned = 0,
+    isPerfectScore = false,
+    existingParent?: ParentDocument // <--- Optional existing parent
+  ) {
+    // Use existing parent if provided, otherwise fetch
+    const parent = existingParent || await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    if (!child.quests || !Array.isArray(child.quests)) {
+      child.quests = this.generateInitialQuests();
+    }
+
+    let questsUpdated = false;
+
+    for (const quest of child.quests) {
+      if (quest.status !== QuestStatus.ACTIVE) continue;
+      if (typeof quest.progress !== 'number') quest.progress = 0;
+
+      let shouldUpdate = false;
+
+      switch (quest.type) {
+        case QuestType.COMPLETE_QUIZZES:
+          if (questType === QuestType.COMPLETE_QUIZZES) {
+            quest.progress += progressIncrement;
+            shouldUpdate = true;
+          }
+          break;
+        case QuestType.COMPLETE_GAMES:
+          if (questType === QuestType.COMPLETE_GAMES) {
+            quest.progress += progressIncrement;
+            shouldUpdate = true;
+          }
+          break;
+        case QuestType.EARN_POINTS:
+          if (pointsEarned > 0) {
+            quest.progress += pointsEarned;
+            shouldUpdate = true;
+          }
+          break;
+        case QuestType.PERFECT_SCORE:
+          if (isPerfectScore) {
+            quest.progress += 1;
+            shouldUpdate = true;
+          }
+          break;
+      }
+
+      if (shouldUpdate) {
+        questsUpdated = true;
+        if (quest.progress >= quest.target) {
+          quest.status = QuestStatus.COMPLETED;
+        }
+      }
+    }
+
+    if (questsUpdated) {
+      // If we are using an existing parent instance from another method (like submitQuiz),
+      // do NOT save here. The caller will save.
+      if (existingParent) {
+        // Just Mark modified if needed, but Mongoose usually tracks changes to subdocs automatically
+        // when fetched document is modified. Explicitly marking just in case.
+        parent.markModified('children');
+        return child.quests;
+      }
+
+      // If we fetched the parent ourselves, we MUST save.
+      parent.markModified('children');
+      const updatedParent = await parent.save();
+      const updatedChild = updatedParent.children.find((c: any) => c._id?.toString() === kidId);
+      return updatedChild!.quests;
+    }
+
+    return null;
+  }
+
+  // ----- Claim quest reward -----
+  async claimQuestReward(parentId: string, kidId: string, questId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    if (!child.quests || !Array.isArray(child.quests)) child.quests = this.generateInitialQuests();
+
+    const quest = child.quests.find((q: any) => q._id?.toString() === questId);
+    if (!quest) throw new NotFoundException('Quest not found');
+
+    if (quest.status === QuestStatus.CLAIMED) throw new BadRequestException('Quest reward already claimed');
+    if (quest.status !== QuestStatus.COMPLETED) throw new BadRequestException('Quest not completed yet');
+
+    // Award points
+    const pointsAwarded = quest.reward;
+    child.Score = (child.Score || 0) + pointsAwarded;
+    child.lifetimeScore = (child.lifetimeScore || 0) + pointsAwarded;
+
+    // Update level based on new score
+    child.progressionLevel = this.calculateLevel(child.lifetimeScore);
+
+    quest.status = QuestStatus.CLAIMED;
+
+    // Generate next quest in progression and push
+    const nextQuest = this.generateNextQuest(quest.type, quest.progressionLevel || 1);
+    child.quests.push(nextQuest);
+
+    parent.markModified('children');
+    await parent.save();
+
+    // Return useful response (child-level info)
+    // Return full child object to update frontend state correctly
+    const childObj = child.toObject ? child.toObject() : child;
+    return {
+      ...childObj,
+      parentId: parent._id.toString(),
+    };
+  }
+
+  // Helper: Calculate level based on score (non-linear)
+  // Level = floor(sqrt(score / 100)) + 1
+  // 0 -> L1
+  // 100 -> L2
+  // 400 -> L3
+  // 900 -> L4
+  private calculateLevel(score: number): number {
+    return Math.floor(Math.sqrt(Math.max(0, score) / 100)) + 1;
+  }
+
 }

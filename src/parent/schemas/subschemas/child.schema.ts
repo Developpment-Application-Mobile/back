@@ -1,6 +1,7 @@
 // ===== child.schema.ts - SIMPLE VERSION =====
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Quiz, QuizSchema } from './quiz.schema';
+import { Quest, QuestSchema } from './quest.schema';
 import { Document } from 'mongoose';
 
 @Schema()
@@ -45,6 +46,9 @@ export class Child extends Document {
 
   @Prop({ type: String })
   parentId?: string;
+
+  @Prop({ type: [QuestSchema], default: [] })
+  quests: Quest[];
 }
 
 export const ChildSchema = SchemaFactory.createForClass(Child);

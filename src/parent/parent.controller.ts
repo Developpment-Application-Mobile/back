@@ -409,4 +409,21 @@ export class ParentController {
   ) {
     return this.parentService.buyGift(parentId, kidId, giftId);
   }
+
+  //─────────────────────────────
+  // QUEST ROUTES
+  // ─────────────────────────────
+
+  @Get(':parentId/kids/:kidId/quests')
+async getQuests(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+  return this.parentService.getQuests(parentId, kidId);
 }
+
+@Post(':parentId/kids/:kidId/quests/:questId/claim')
+async claimQuestReward(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('questId') questId: string
+) {
+  return this.parentService.claimQuestReward(parentId, kidId, questId);
+}}
