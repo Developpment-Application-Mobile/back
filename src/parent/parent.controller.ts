@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,6 +25,7 @@ import { QuizDto, UpdateQuizDto, GenerateQuizDto, SubmitQuizAnswersDto } from '.
 import { QuestionDto, UpdateQuestionDto } from './dto/question.dto';
 import { AuthService } from 'src/auth/auth.service';
 import { CreateGiftDto } from './dto/gift.dto';
+import { ChildReviewResponseDto, GenerateReviewDto } from './dto/review.dto';
 
 @ApiTags('parents')
 @Controller('parents')
@@ -426,4 +428,75 @@ async claimQuestReward(
   @Param('questId') questId: string
 ) {
   return this.parentService.claimQuestReward(parentId, kidId, questId);
-}}
+}
+
+// ─────────────────────────────
+  // 📊 AI REVIEW ROUTES
+  // ─────────────────────────────
+
+  @Post(':parentId/kids/:kidId/review')
+  @ApiOperation({
+    summary: 'Generate AI-powered comprehensive performance review for a child',
+    description: 'Analyzes the child\'s quiz performance across ALL subjects from the LAST 30 DAYS and generates a comprehensive review identifying strengths, weaknesses, and providing recommendations. The review automatically covers the complete learning profile including math, science, general knowledge, and all other topics the child has studied in the past month. No request body needed.',
+  })
+  @ApiParam({ name: 'parentId', description: 'Parent ID' })
+  @ApiParam({ name: 'kidId', description: 'Child ID' })
+  @ApiBody({ type: GenerateReviewDto, required: false })
+  @ApiResponse({
+    status: 200,
+    description: 'Review generated successfully',
+    type: ChildReviewResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'Parent or child not found, or no completed quizzes available in the last 30 days' })
+  async generateReview(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Body() options?: GenerateReviewDto,
+  ) {
+    return this.parentService.generateChildReview(parentId, kidId, options);
+  }
+
+  @Post(':parentId/kids/:kidId/review/export')
+  @ApiOperation({
+    summary: 'Export comprehensive child performance review as PDF',
+    description: 'Generates an AI-powered performance review analyzing ALL subjects from the LAST 30 DAYS and exports it as a downloadable PDF document. The PDF includes detailed statistics, performance breakdown by topic, and comprehensive AI analysis covering the child\'s complete learning profile for the past month. No request body needed.',
+  })
+  @ApiParam({ name: 'parentId', description: 'Parent ID' })
+  @ApiParam({ name: 'kidId', description: 'Child ID' })
+  @ApiBody({ type: GenerateReviewDto, required: false })
+  @ApiResponse({
+    status: 200,
+    description: 'PDF generated successfully',
+    content: {
+      'application/pdf': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiNotFoundResponse({ description: 'Parent or child not found, or no completed quizzes available in the last 30 days' })
+  async exportReviewPdf(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Body() options: GenerateReviewDto,
+    @Res() res: any,
+  ) {
+    const pdfBuffer = await this.parentService.exportReviewToPdf(parentId, kidId, options);
+
+    // Get child name for filename
+    const parent = await this.parentService.getParentById(parentId);
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    const childName = child?.name || 'child';
+    const filename = `${childName.replace(/\s+/g, '_')}_performance_review_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    res.send(pdfBuffer);
+  }
+}

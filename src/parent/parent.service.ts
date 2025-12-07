@@ -6,6 +6,7 @@ import * as QRCode from 'qrcode';
 import * as bcrypt from 'bcrypt';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Quest, QuestStatus, QuestType } from './schemas/subschemas/quest.schema';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class ParentService {
@@ -41,7 +42,7 @@ export class ParentService {
     if (
       updateData.name !== undefined &&
       updateData.name !== null &&
-      updateData.name !== ''
+      updateData.name !== '' 
     ) {
       updates.name = updateData.name;
     }
@@ -990,6 +991,282 @@ export class ParentService {
   // 900 -> L4
   private calculateLevel(score: number): number {
     return Math.floor(Math.sqrt(Math.max(0, score) / 100)) + 1;
+  }
+
+  
+  // ─────────────────────────────
+  // 📊 AI REVIEW METHODS
+  // ─────────────────────────────
+
+  async generateChildReview(parentId: string, kidId: string, options?: any) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    // Automatically filter to last 30 days (last month)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Get all quizzes from the last 30 days
+    let quizzes = (child.quizzes || []).filter((quiz: any) => {
+      // If quiz has createdAt, check if it's within last 30 days
+      if (quiz.createdAt) {
+        const quizDate = new Date(quiz.createdAt);
+        return quizDate >= thirtyDaysAgo;
+      }
+      // If no createdAt, include it (assume it's recent)
+      return true;
+    });
+
+    // Calculate statistics - filter for answered quizzes
+    const answeredQuizzes = quizzes.filter((q: any) => q.isAnswered === true);
+    const totalQuizzes = answeredQuizzes.length;
+
+    if (totalQuizzes === 0) {
+      // Provide more helpful error message
+      const totalAllQuizzes = (child.quizzes || []).length;
+      const totalAnsweredAll = (child.quizzes || []).filter((q: any) => q.isAnswered === true).length;
+
+      if (totalAllQuizzes === 0) {
+        throw new NotFoundException('This child has no quizzes yet. Please create and complete some quizzes first.');
+      } else if (totalAnsweredAll === 0) {
+        throw new NotFoundException(`This child has ${totalAllQuizzes} quiz(es) but none have been completed yet. Please submit answers to at least one quiz.`);
+      } else {
+        throw new NotFoundException(`No completed quizzes found in the last 30 days. The child has ${totalAnsweredAll} completed quiz(es) total, but they are older than 30 days.`);
+      }
+    }
+
+    // Calculate overall average
+    const totalScore = answeredQuizzes.reduce((sum: number, q: any) => sum + (q.score || 0), 0);
+    const overallAverage = totalScore / totalQuizzes;
+
+    // Group by topic and calculate performance
+    const topicStats: Record<string, any> = {};
+    answeredQuizzes.forEach((quiz: any) => {
+      const topic = quiz.type || 'general';
+      if (!topicStats[topic]) {
+        topicStats[topic] = {
+          topic,
+          scores: [],
+          quizzesCompleted: 0,
+        };
+      }
+      topicStats[topic].scores.push(quiz.score || 0);
+      topicStats[topic].quizzesCompleted++;
+    });
+
+    const performanceByTopic = Object.values(topicStats).map((stat: any) => ({
+      topic: stat.topic,
+      quizzesCompleted: stat.quizzesCompleted,
+      averageScore: stat.scores.reduce((a: number, b: number) => a + b, 0) / stat.scores.length,
+      highestScore: Math.max(...stat.scores),
+      lowestScore: Math.min(...stat.scores),
+    }));
+
+    // Sort topics by average score to identify strengths and weaknesses
+    const sortedTopics = [...performanceByTopic].sort((a, b) => b.averageScore - a.averageScore);
+    const strongTopics = sortedTopics.slice(0, Math.ceil(sortedTopics.length / 2));
+    const weakTopics = sortedTopics.slice(Math.ceil(sortedTopics.length / 2));
+
+    // Prepare data for AI analysis
+    const performanceSummary = performanceByTopic
+      .map(p => `${p.topic}: ${p.quizzesCompleted} quizzes, average ${p.averageScore.toFixed(1)}%, range ${p.lowestScore}-${p.highestScore}%`)
+      .join('\n');
+
+    const strongTopicsList = strongTopics.map(t => `${t.topic} (${t.averageScore.toFixed(1)}%)`).join(', ');
+    const weakTopicsList = weakTopics.map(t => `${t.topic} (${t.averageScore.toFixed(1)}%)`).join(', ');
+
+    // Generate AI review using Gemini
+    const key = process.env.GOOGLE_API_KEY;
+    if (!key) {
+      throw new NotFoundException('Missing GOOGLE_API_KEY');
+    }
+
+    const genAI = new GoogleGenerativeAI(key);
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+      generationConfig: { responseMimeType: 'application/json' },
+    });
+
+    const prompt = `You are an educational expert analyzing a child's overall quiz performance across ALL subjects. Generate a comprehensive review for parents that covers the child's complete learning profile.
+
+Child Information:
+- Name: ${child.name}
+- Age: ${child.age}
+- Level: ${child.level}
+- Progression Level: ${child.progressionLevel || 1}
+- Total Quizzes Completed: ${totalQuizzes}
+- Overall Average Score: ${overallAverage.toFixed(1)}%
+- Lifetime Score: ${child.lifetimeScore || 0}
+
+Performance by Topic:
+${performanceSummary}
+
+Strong Topics: ${strongTopicsList || 'None yet'}
+Weak Topics: ${weakTopicsList || 'None yet'}
+
+Generate a JSON response with this structure:
+{
+  "strengths": "string - Comprehensive analysis of what the child excels at ACROSS ALL TOPICS. Mention specific subjects and patterns. (3-4 sentences)",
+  "weaknesses": "string - Comprehensive analysis of areas needing improvement ACROSS ALL TOPICS. Mention specific subjects and learning gaps. (3-4 sentences)",
+  "recommendations": "string - Specific actionable recommendations for parents covering ALL subjects. Include strategies for both strong and weak areas. Format as bullet points. (4-5 recommendations)",
+  "summary": "string - Overall encouraging summary of the child's COMPLETE learning journey across all subjects. Highlight overall progress and potential. (3-4 sentences)"
+}
+
+IMPORTANT Requirements:
+- Analyze the child's performance HOLISTICALLY across all subjects (math, science, general knowledge, etc.)
+- Compare performance between different topics
+- Identify cross-subject patterns (e.g., "strong analytical skills across math and science")
+- Provide balanced feedback covering all areas of learning
+- Be encouraging and positive while being honest
+- Provide specific, actionable advice that addresses the complete learning profile
+- Reference actual performance data from multiple topics
+- Keep language appropriate for parents
+- Focus on growth mindset and well-rounded development`;
+
+    const text = await this.generateContentWithRetry(model, prompt, 3);
+    let parsedText = text?.trim() ?? '';
+    if (parsedText.startsWith('```')) {
+      parsedText = parsedText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
+    }
+
+    let aiReview;
+    try {
+      aiReview = JSON.parse(parsedText);
+    } catch {
+      const start = parsedText.indexOf('{');
+      const end = parsedText.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        const candidate = parsedText.slice(start, end + 1);
+        try {
+          aiReview = JSON.parse(candidate);
+        } catch {
+          throw new NotFoundException('Failed to parse AI review response');
+        }
+      } else {
+        throw new NotFoundException('Failed to parse AI review response');
+      }
+    }
+
+    // Construct response data
+    const reviewData = {
+      childName: child.name,
+      childAge: child.age,
+      childLevel: child.level,
+      progressionLevel: child.progressionLevel || 1,
+      totalQuizzes,
+      overallAverage: parseFloat(overallAverage.toFixed(2)),
+      lifetimeScore: child.lifetimeScore || 0,
+      currentScore: child.Score || 0,
+      performanceByTopic,
+      strengths: aiReview.strengths || 'No strengths analysis available',
+      weaknesses: aiReview.weaknesses || 'No weaknesses analysis available',
+      recommendations: aiReview.recommendations || 'No recommendations available',
+      summary: aiReview.summary || 'No summary available',
+      generatedAt: new Date(),
+    };
+
+    // Generate PDF and convert to base64
+    const pdfBuffer = await this.generatePdfFromReviewData(reviewData);
+    const pdfBase64 = pdfBuffer.toString('base64');
+
+    return {
+      ...reviewData,
+      pdfBase64,
+    };
+  }
+
+  private async generatePdfFromReviewData(reviewData: any): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Header
+      doc.fontSize(24).font('Helvetica-Bold').text('Child Performance Review', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica').text(`Generated on ${new Date().toLocaleDateString()}`, { align: 'center' });
+      doc.moveDown(2);
+
+      // Child Information Section
+      doc.fontSize(16).font('Helvetica-Bold').text('Child Information', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica');
+      doc.text(`Name: ${reviewData.childName}`);
+      doc.text(`Age: ${reviewData.childAge} years old`);
+      doc.text(`Level: ${reviewData.childLevel}`);
+      doc.text(`Progression Level: ${reviewData.progressionLevel}`);
+      doc.moveDown(1.5);
+
+      // Overall Statistics Section
+      doc.fontSize(16).font('Helvetica-Bold').text('Overall Statistics', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica');
+      doc.text(`Total Quizzes Completed: ${reviewData.totalQuizzes}`);
+      doc.text(`Overall Average Score: ${reviewData.overallAverage}%`);
+      doc.text(`Lifetime Score: ${reviewData.lifetimeScore} points`);
+      doc.text(`Current Available Points: ${reviewData.currentScore} points`);
+      doc.moveDown(1.5);
+
+      // Performance by Topic Section
+      doc.fontSize(16).font('Helvetica-Bold').text('Performance by Topic', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(11).font('Helvetica');
+
+      reviewData.performanceByTopic.forEach((topic: any) => {
+        doc.font('Helvetica-Bold').text(`${topic.topic.toUpperCase()}:`, { continued: true });
+        doc.font('Helvetica').text(` ${topic.quizzesCompleted} quizzes, avg ${topic.averageScore.toFixed(1)}% (${topic.lowestScore}%-${topic.highestScore}%)`);
+      });
+      doc.moveDown(1.5);
+
+      // AI Analysis Section
+      doc.fontSize(16).font('Helvetica-Bold').fillColor('#2E7D32').text('Strengths', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(11).font('Helvetica').fillColor('black').text(reviewData.strengths, { align: 'justify' });
+      doc.moveDown(1.5);
+
+      doc.fontSize(16).font('Helvetica-Bold').fillColor('#D32F2F').text('Areas for Improvement', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(11).font('Helvetica').fillColor('black').text(reviewData.weaknesses, { align: 'justify' });
+      doc.moveDown(1.5);
+
+      doc.fontSize(16).font('Helvetica-Bold').fillColor('#1976D2').text('Recommendations', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(11).font('Helvetica').fillColor('black').text(reviewData.recommendations, { align: 'justify' });
+      doc.moveDown(1.5);
+
+      doc.fontSize(16).font('Helvetica-Bold').fillColor('#7B1FA2').text('Summary', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(11).font('Helvetica').fillColor('black').text(reviewData.summary, { align: 'justify' });
+      doc.moveDown(2);
+
+      // Footer
+      doc.fontSize(9).fillColor('gray').text(
+        'This report was generated automatically using AI analysis. Please use it as a guide for supporting your child\'s learning journey.',
+        { align: 'center' }
+      );
+
+      doc.end();
+    });
+  }
+
+  async exportReviewToPdf(parentId: string, kidId: string, options?: any): Promise<Buffer> {
+    // Generate review data (this already includes pdfBase64, but we'll regenerate for consistency)
+    const reviewData = await this.generateChildReview(parentId, kidId, options);
+
+    // Remove pdfBase64 from reviewData before passing to PDF generator
+    const { pdfBase64, ...dataForPdf } = reviewData;
+
+    // Generate PDF using the helper method
+    return this.generatePdfFromReviewData(dataForPdf);
   }
 
 }
