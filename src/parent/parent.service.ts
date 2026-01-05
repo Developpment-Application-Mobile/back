@@ -5,8 +5,8 @@ import { Parent, ParentDocument } from './schemas/parent.schema';
 import * as QRCode from 'qrcode';
 import * as bcrypt from 'bcrypt';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Quest, QuestStatus, QuestType } from './schemas/subschemas/quest.schema';
 import PDFDocument from 'pdfkit';
+import { Quest, QuestStatus, QuestType } from './schemas/subschemas/quest.schema';
 
 @Injectable()
 export class ParentService {
@@ -42,7 +42,7 @@ export class ParentService {
     if (
       updateData.name !== undefined &&
       updateData.name !== null &&
-      updateData.name !== '' 
+      updateData.name !== ''
     ) {
       updates.name = updateData.name;
     }
@@ -993,12 +993,197 @@ export class ParentService {
     return Math.floor(Math.sqrt(Math.max(0, score) / 100)) + 1;
   }
 
-  
-  // ─────────────────────────────
-  // 📊 AI REVIEW METHODS
+
+
+    // ─────────────────────────────
+  // 🧩 PUZZLE METHODS
   // ─────────────────────────────
 
-  async generateChildReview(parentId: string, kidId: string, options?: any) {
+  async getAllPuzzles(parentId: string, kidId: string) {
+  console.log(`🔍 Getting puzzles for Parent: ${parentId}, Child: ${kidId}`);
+  
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) {
+    console.error(`❌ Parent not found: ${parentId}`);
+    throw new NotFoundException('Parent not found');
+  }
+  console.log(`✅ Found parent: ${parent.name}`);
+
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) {
+    console.error(`❌ Child not found: ${kidId}`);
+    console.log(`Available children IDs:`, parent.children.map((c: any) => c._id?.toString()));
+    throw new NotFoundException('Child not found');
+  }
+  console.log(`✅ Found child: ${child.name}`);
+
+  // Initialize puzzles array if it doesn't exist
+  if (!child.puzzles) {
+    console.log(`⚠️ Child has no puzzles array, initializing...`);
+    child.puzzles = [];
+    await parent.save();
+  }
+
+  console.log(`📦 Returning ${child.puzzles.length} puzzles`);
+  
+  // Sort by createdAt descending
+  const sortedPuzzles = (child.puzzles || []).sort((a: any, b: any) => 
+    new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+  );
+
+  return sortedPuzzles;
+}
+
+  async getPuzzleById(parentId: string, kidId: string, puzzleId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    const puzzle = child.puzzles?.find((p: any) => p._id?.toString() === puzzleId);
+    if (!puzzle) throw new NotFoundException('Puzzle not found');
+    return puzzle;
+  }
+
+  async addPuzzle(parentId: string, kidId: string, data: any) {
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) throw new NotFoundException('Parent not found');
+  
+  const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+  if (!child) throw new NotFoundException('Child not found');
+
+  const type = data.type || 'image';
+  const difficulty = data.difficulty || 'easy';
+  const gridSize = data.gridSize || (difficulty === 'hard' ? 4 : difficulty === 'medium' ? 3 : 2);
+  const topic = data.topic || 'animals';
+  
+  // ✅ Use stable Unsplash URLs - same URL = same image forever
+  const stableImages = {
+    animals: [
+      'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=400&h=400&fit=crop',
+      'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=400&h=400&fit=crop',
+      'https://images.unsplash.com/photo-1425082661705-1834bfd09dca?w=400&h=400&fit=crop',
+      'https://images.unsplash.com/photo-1437622368342-7a3d73a34c8f?w=400&h=400&fit=crop',
+      'https://images.unsplash.com/photo-1484406566174-9da000fda645?w=400&h=400&fit=crop',
+    ],
+  };
+  
+  const topicImages = stableImages[topic] || stableImages.animals;
+  const randomImage = topicImages[Math.floor(Math.random() * topicImages.length)];
+
+  const newPuzzle = {
+    title: `${topic.toUpperCase()} ${type.toUpperCase()} PUZZLE`,
+    type: type,
+    difficulty: difficulty,
+    gridSize: gridSize,
+    pieces: Array.from({ length: gridSize * gridSize }, (_, i) => ({
+      id: i,
+      correctPosition: i,
+      currentPosition: i,
+      content: `${i + 1}`,
+    })),
+    hint: `Arrange the ${topic} in order`,
+    imageUrl: randomImage,  // ✅ Stable URL
+    isCompleted: false,
+    score: 0,
+    attempts: 0,
+    timeSpent: 0,
+    createdAt: new Date()
+  };
+
+  if (!child.puzzles) child.puzzles = [];
+  child.puzzles.push(newPuzzle);
+  await parent.save();
+  
+  return child.puzzles.at(-1);
+}
+
+
+  async submitPuzzle(parentId: string, kidId: string, puzzleId: string, submission: any) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+    
+    const puzzle = child.puzzles?.find((p: any) => p._id?.toString() === puzzleId);
+    if (!puzzle) throw new NotFoundException('Puzzle not found');
+
+    const { positions, timeSpent } = submission;
+
+    // Validate solution
+    // A puzzle is solved if every piece is in its correct index
+    // implementation: positions[i] should be equal to the piece's correct ID/index
+    const isCorrect = positions.every((pos, index) => pos === index);
+
+    puzzle.attempts += 1;
+    puzzle.timeSpent += timeSpent;
+
+    let score = 0;
+    if (isCorrect) {
+      puzzle.isCompleted = true;
+      puzzle.completedAt = new Date();
+      
+      // Calculate score based on difficulty and time
+      const basePoints = puzzle.difficulty === 'hard' ? 50 : puzzle.difficulty === 'medium' ? 30 : 15;
+      const timeBonus = Math.max(0, 100 - timeSpent); // Simple bonus
+      score = basePoints + timeBonus;
+      
+      puzzle.score = Math.max(puzzle.score, score); // Keep best score
+
+      // Update Child Stats
+      child.Score = (child.Score || 0) + score;
+      child.lifetimeScore = (child.lifetimeScore || 0) + score;
+      child.progressionLevel = this.calculateLevel(child.lifetimeScore);
+      
+      // Trigger Quests (e.g., Complete Games)
+      // Assuming QuestType.COMPLETE_GAMES covers puzzles too, or add a specific type
+      // Using existing QuestType.COMPLETE_GAMES for now
+      await this.trackQuestProgress(
+          parentId, 
+          kidId, 
+          QuestType.COMPLETE_GAMES, 
+          1, 
+          score, 
+          false, 
+          parent
+      );
+    }
+    
+    // Save updated positions if you want to support "save for later"
+    // For now we just check correctness
+    
+    await parent.save();
+
+    return {
+      puzzle,
+      isCorrect,
+      score: isCorrect ? score : 0,
+      attempts: puzzle.attempts,
+      message: isCorrect ? 'Puzzle Completed!' : 'Try again!'
+    };
+  }
+
+  async deletePuzzle(parentId: string, kidId: string, puzzleId: string) {
+    const parent = await this.parentModel.findById(parentId);
+    if (!parent) throw new NotFoundException('Parent not found');
+    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
+    if (!child) throw new NotFoundException('Child not found');
+
+    if (!child.puzzles) return { message: 'Puzzle not found' };
+
+    const initialLen = child.puzzles.length;
+    child.puzzles = child.puzzles.filter((p: any) => p._id?.toString() !== puzzleId);
+
+    if (child.puzzles.length === initialLen) throw new NotFoundException('Puzzle not found');
+
+    await parent.save();
+    return { message: 'Puzzle deleted successfully' };
+  }
+
+
+
+
+async generateChildReview(parentId: string, kidId: string, options?: any) {
     const parent = await this.parentModel.findById(parentId);
     if (!parent) throw new NotFoundException('Parent not found');
 
@@ -1164,10 +1349,10 @@ IMPORTANT Requirements:
       lifetimeScore: child.lifetimeScore || 0,
       currentScore: child.Score || 0,
       performanceByTopic,
-      strengths: aiReview.strengths || 'No strengths analysis available',
-      weaknesses: aiReview.weaknesses || 'No weaknesses analysis available',
-      recommendations: aiReview.recommendations || 'No recommendations available',
-      summary: aiReview.summary || 'No summary available',
+      strengths: typeof aiReview.strengths === 'string' ? aiReview.strengths : JSON.stringify(aiReview.strengths) || 'No strengths analysis available',
+      weaknesses: typeof aiReview.weaknesses === 'string' ? aiReview.weaknesses : JSON.stringify(aiReview.weaknesses) || 'No weaknesses analysis available',
+      recommendations: typeof aiReview.recommendations === 'string' ? aiReview.recommendations : (Array.isArray(aiReview.recommendations) ? aiReview.recommendations.join('\n') : JSON.stringify(aiReview.recommendations)) || 'No recommendations available',
+      summary: typeof aiReview.summary === 'string' ? aiReview.summary : JSON.stringify(aiReview.summary) || 'No summary available',
       generatedAt: new Date(),
     };
 
@@ -1268,5 +1453,4 @@ IMPORTANT Requirements:
     // Generate PDF using the helper method
     return this.generatePdfFromReviewData(dataForPdf);
   }
-
-}
+  }

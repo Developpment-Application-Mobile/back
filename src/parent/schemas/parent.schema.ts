@@ -30,6 +30,8 @@ export class Parent {
   @Prop({ default: true })
   isActive: boolean;
 
+  
+
   // ==== FORGOT PASSWORD ====
   @Prop()
   resetPasswordToken?: string;

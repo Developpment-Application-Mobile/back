@@ -3,6 +3,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Quiz, QuizSchema } from './quiz.schema';
 import { Quest, QuestSchema } from './quest.schema';
 import { Document } from 'mongoose';
+import { Puzzle, PuzzleSchema } from './puzzle.schema';
 
 @Schema()
 export class Child extends Document {
@@ -49,6 +50,9 @@ export class Child extends Document {
 
   @Prop({ type: [QuestSchema], default: [] })
   quests: Quest[];
+
+  @Prop({ type: [PuzzleSchema], default: [] })
+ puzzles: Puzzle[];
 }
 
 export const ChildSchema = SchemaFactory.createForClass(Child);

@@ -142,4 +142,38 @@ export class AuthService {
 
     return { message: 'Password updated successfully' };
   }
+
+
+  async changePassword(
+  parentId: string,
+  currentPassword: string,
+  newPassword: string,
+) {
+  // Find the parent
+  const parent = await this.parentModel.findById(parentId);
+  if (!parent) {
+    throw new NotFoundException('Parent not found');
+  }
+
+  // Verify current password
+  const isPasswordValid = await bcrypt.compare(
+    currentPassword,
+    parent.password,
+  );
+  if (!isPasswordValid) {
+    throw new UnauthorizedException('Incorrect current password');
+  }
+
+  // Validate new password
+  if (!newPassword || newPassword.length < 6) {
+    throw new BadRequestException('Password must be at least 6 characters');
+  }
+
+  // Hash and save new password
+  parent.password = await bcrypt.hash(newPassword, 10);
+  await parent.save();
+
+  return { message: 'Password changed successfully' };
+}
+
 }

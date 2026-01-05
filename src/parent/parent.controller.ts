@@ -7,7 +7,7 @@ import {
   Body,
   Param,
   BadRequestException,
-  Res,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -25,7 +25,7 @@ import { QuizDto, UpdateQuizDto, GenerateQuizDto, SubmitQuizAnswersDto } from '.
 import { QuestionDto, UpdateQuestionDto } from './dto/question.dto';
 import { AuthService } from 'src/auth/auth.service';
 import { CreateGiftDto } from './dto/gift.dto';
-import { ChildReviewResponseDto, GenerateReviewDto } from './dto/review.dto';
+import { GeneratePuzzleDto, SubmitPuzzleDto } from './dto/puzzle.dto';
 
 @ApiTags('parents')
 @Controller('parents')
@@ -33,9 +33,6 @@ export class ParentController {
   constructor(private readonly parentService: ParentService,
     private readonly authService: AuthService,
   ) { }
-
-
-
 
   // ─────────────────────────────
   // 👨‍👩‍👧 PARENT ROUTES
@@ -417,86 +414,126 @@ export class ParentController {
   // ─────────────────────────────
 
   @Get(':parentId/kids/:kidId/quests')
-async getQuests(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
-  return this.parentService.getQuests(parentId, kidId);
-}
+  async getQuests(@Param('parentId') parentId: string, @Param('kidId') kidId: string) {
+    return this.parentService.getQuests(parentId, kidId);
+  }
 
-@Post(':parentId/kids/:kidId/quests/:questId/claim')
-async claimQuestReward(
+  @Post(':parentId/kids/:kidId/quests/:questId/claim')
+  async claimQuestReward(
+    @Param('parentId') parentId: string,
+    @Param('kidId') kidId: string,
+    @Param('questId') questId: string
+  ) {
+    return this.parentService.claimQuestReward(parentId, kidId, questId);
+  }
+
+// 🧩 PUZZLE ROUTES (FIXED)
+// ─────────────────────────────
+
+@Post(':parentId/kids/:kidId/puzzles')
+@ApiOperation({ summary: 'Generate a new puzzle' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiBody({ type: GeneratePuzzleDto, required: false })
+@ApiResponse({ status: 201, description: 'Puzzle generated successfully' })
+@ApiNotFoundResponse({ description: 'Parent or child not found' })
+async generatePuzzle(
   @Param('parentId') parentId: string,
   @Param('kidId') kidId: string,
-  @Param('questId') questId: string
+  @Body() body: GeneratePuzzleDto,
 ) {
-  return this.parentService.claimQuestReward(parentId, kidId, questId);
+  console.log(`📥 Generating puzzle - Parent: ${parentId}, Child: ${kidId}`);
+  console.log('📥 Request body:', body);
+  return this.parentService.addPuzzle(parentId, kidId, body);
 }
 
+@Get(':parentId/kids/:kidId/puzzles')
+@ApiOperation({ summary: 'Get all puzzles for a child' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiResponse({ status: 200, description: 'List of puzzles' })
+@ApiNotFoundResponse({ description: 'Parent or child not found' })
+async getAllPuzzles(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+) {
+  console.log(`📥 Fetching puzzles - Parent: ${parentId}, Child: ${kidId}`);
+  try {
+    const puzzles = await this.parentService.getAllPuzzles(parentId, kidId);
+    console.log(`✅ Found ${puzzles.length} puzzles`);
+    return puzzles;
+  } catch (error) {
+    console.error('❌ Error fetching puzzles:', error);
+    throw error;
+  }
+}
+
+@Get(':parentId/kids/:kidId/puzzles/:puzzleId')
+@ApiOperation({ summary: 'Get a specific puzzle by ID' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiParam({ name: 'puzzleId', description: 'Puzzle ID' })
+@ApiResponse({ status: 200, description: 'Puzzle found' })
+@ApiNotFoundResponse({ description: 'Parent, child, or puzzle not found' })
+async getPuzzle(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('puzzleId') puzzleId: string,
+) {
+  console.log(`📥 Fetching puzzle - Parent: ${parentId}, Child: ${kidId}, Puzzle: ${puzzleId}`);
+  return this.parentService.getPuzzleById(parentId, kidId, puzzleId);
+}
+
+@Post(':parentId/kids/:kidId/puzzles/:puzzleId/submit')
+@ApiOperation({ summary: 'Submit puzzle solution' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiParam({ name: 'puzzleId', description: 'Puzzle ID' })
+@ApiBody({ type: SubmitPuzzleDto })
+@ApiResponse({ status: 200, description: 'Solution submitted successfully' })
+@ApiNotFoundResponse({ description: 'Parent, child, or puzzle not found' })
+async submitPuzzle(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('puzzleId') puzzleId: string,
+  @Body() body: SubmitPuzzleDto,
+) {
+  console.log(`📥 Submitting puzzle solution - Parent: ${parentId}, Child: ${kidId}, Puzzle: ${puzzleId}`);
+  console.log('📥 Submission:', body);
+  return this.parentService.submitPuzzle(parentId, kidId, puzzleId, body);
+}
+
+@Delete(':parentId/kids/:kidId/puzzles/:puzzleId')
+@ApiOperation({ summary: 'Delete a puzzle' })
+@ApiParam({ name: 'parentId', description: 'Parent ID' })
+@ApiParam({ name: 'kidId', description: 'Child ID' })
+@ApiParam({ name: 'puzzleId', description: 'Puzzle ID' })
+@ApiResponse({ status: 200, description: 'Puzzle deleted successfully' })
+@ApiNotFoundResponse({ description: 'Parent, child, or puzzle not found' })
+async deletePuzzle(
+  @Param('parentId') parentId: string,
+  @Param('kidId') kidId: string,
+  @Param('puzzleId') puzzleId: string,
+) {
+  console.log(`📥 Deleting puzzle - Parent: ${parentId}, Child: ${kidId}, Puzzle: ${puzzleId}`);
+  return this.parentService.deletePuzzle(parentId, kidId, puzzleId);
+}
+
+
 // ─────────────────────────────
-  // 📊 AI REVIEW ROUTES
+  // 📊 REVIEW / REPORT ROUTES
   // ─────────────────────────────
-
   @Post(':parentId/kids/:kidId/review')
-  @ApiOperation({
-    summary: 'Generate AI-powered comprehensive performance review for a child',
-    description: 'Analyzes the child\'s quiz performance across ALL subjects from the LAST 30 DAYS and generates a comprehensive review identifying strengths, weaknesses, and providing recommendations. The review automatically covers the complete learning profile including math, science, general knowledge, and all other topics the child has studied in the past month. No request body needed.',
-  })
+  @ApiOperation({ summary: 'Generate an AI activity report for a child' })
   @ApiParam({ name: 'parentId', description: 'Parent ID' })
   @ApiParam({ name: 'kidId', description: 'Child ID' })
-  @ApiBody({ type: GenerateReviewDto, required: false })
-  @ApiResponse({
-    status: 200,
-    description: 'Review generated successfully',
-    type: ChildReviewResponseDto,
-  })
-  @ApiNotFoundResponse({ description: 'Parent or child not found, or no completed quizzes available in the last 30 days' })
-  async generateReview(
+  @ApiResponse({ status: 201, description: 'Report generated successfully' })
+  async generateChildReview(
     @Param('parentId') parentId: string,
     @Param('kidId') kidId: string,
-    @Body() options?: GenerateReviewDto,
   ) {
-    return this.parentService.generateChildReview(parentId, kidId, options);
+    // You can add a DTO here if you want to pass parameters later
+    return this.parentService.generateChildReview(parentId, kidId);
   }
 
-  @Post(':parentId/kids/:kidId/review/export')
-  @ApiOperation({
-    summary: 'Export comprehensive child performance review as PDF',
-    description: 'Generates an AI-powered performance review analyzing ALL subjects from the LAST 30 DAYS and exports it as a downloadable PDF document. The PDF includes detailed statistics, performance breakdown by topic, and comprehensive AI analysis covering the child\'s complete learning profile for the past month. No request body needed.',
-  })
-  @ApiParam({ name: 'parentId', description: 'Parent ID' })
-  @ApiParam({ name: 'kidId', description: 'Child ID' })
-  @ApiBody({ type: GenerateReviewDto, required: false })
-  @ApiResponse({
-    status: 200,
-    description: 'PDF generated successfully',
-    content: {
-      'application/pdf': {
-        schema: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-    },
-  })
-  @ApiNotFoundResponse({ description: 'Parent or child not found, or no completed quizzes available in the last 30 days' })
-  async exportReviewPdf(
-    @Param('parentId') parentId: string,
-    @Param('kidId') kidId: string,
-    @Body() options: GenerateReviewDto,
-    @Res() res: any,
-  ) {
-    const pdfBuffer = await this.parentService.exportReviewToPdf(parentId, kidId, options);
-
-    // Get child name for filename
-    const parent = await this.parentService.getParentById(parentId);
-    const child = parent.children.find((c: any) => c._id?.toString() === kidId);
-    const childName = child?.name || 'child';
-    const filename = `${childName.replace(/\s+/g, '_')}_performance_review_${new Date().toISOString().split('T')[0]}.pdf`;
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Length': pdfBuffer.length,
-    });
-
-    res.send(pdfBuffer);
-  }
 }
